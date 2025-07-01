@@ -74,6 +74,14 @@
                         </button>
                     </div>
 
+                    <!-- 开始AI学习按钮 -->
+                    <div class="ai-learning-section">
+                        <button class="ai-learning-btn" onclick="performStyleAnalysis()" id="start-learning-btn" disabled>
+                            <i class="fas fa-brain"></i>
+                            开始AI学习
+                        </button>
+                    </div>
+
                     <div class="analysis-status">
                         <div class="status-item">
                             <i class="fas fa-info-circle status-icon"></i>
@@ -110,12 +118,10 @@
                         <div class="form-group">
                             <label for="content-type">内容类型</label>
                             <select id="content-type" class="form-select">
-                                <option value="speech">发言稿</option>
-                                <option value="email">工作邮件</option>
-                                <option value="meeting">会议纪要</option>
-                                <option value="announcement">工作安排</option>
-                                <option value="report">工作汇报</option>
-                                <option value="letter">正式函件</option>
+                                <option value="formal_speech">正式发言稿（严谨、正式）</option>
+                                <option value="casual_speech">随性讲话稿（自然、轻松）</option>
+                                <option value="work_email">工作邮件</option>
+                                <option value="default">不指定，按文章风格输出</option>
                             </select>
                         </div>
                     </div>

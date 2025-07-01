@@ -360,12 +360,10 @@ ${styleOutput}
 // 辅助函数：获取内容类型显示名称
 function getContentTypeDisplayName(type) {
     const typeMap = {
-        'speech': '发言稿',
-        'email': '工作邮件',
-        'meeting': '会议纪要',
-        'announcement': '工作安排',
-        'report': '工作汇报',
-        'letter': '正式函件'
+        'formal_speech': '正式发言稿',
+        'casual_speech': '随性讲话稿',
+        'work_email': '工作邮件',
+        'default': '按文章风格输出'
     };
     return typeMap[type] || '文档';
 }
@@ -373,7 +371,7 @@ function getContentTypeDisplayName(type) {
 // 本地备用内容生成
 function generateFallbackContent(topic, contentType, contentLength, notes) {
     const templates = {
-        speech: `各位同事：
+        formal_speech: `各位同事：
 
 大家好！今天我要就"${topic}"这个重要议题与大家交流。
 
@@ -394,7 +392,23 @@ ${notes ? `\n补充说明：\n${notes}` : ''}
 
 谢谢大家！`,
 
-        email: `各位同事：
+        casual_speech: `大家好！
+
+今天想和大家聊聊"${topic}"这个话题。
+
+说实话，这个事情挺重要的，我觉得咱们得好好琢磨琢磨。我的想法是这样的：
+
+首先，咱们得把这事儿看重了。${topic}虽然看起来可能不起眼，但实际上挺关键的，关系到咱们后面的发展。
+
+然后呢，咱们得想想怎么做。我觉得可以这样：大家先各自梳理一下手头的事情，看看哪些和这个相关，然后咱们再一起讨论讨论。
+
+${notes ? `\n顺便说一下：\n${notes}` : ''}
+
+总的来说，这事儿不复杂，关键是大家一起努力，我相信肯定能搞定的。
+
+谢谢大家！`,
+
+        work_email: `各位同事：
 
 关于"${topic}"事宜，现将相关安排通知如下：
 
@@ -411,106 +425,26 @@ ${notes ? `\n特别说明：\n${notes}` : ''}
 此致
 敬礼！`,
 
-        meeting: `会议纪要
+        default: `关于${topic}
 
-会议主题：${topic}
-会议时间：${new Date().toLocaleDateString('zh-CN')}
-参会人员：相关部门负责人
+${topic}是当前需要重点关注和推进的重要工作。通过深入分析研究，现就相关事项说明如下：
 
-会议主要内容：
+一、基本情况
+${topic}涉及多个方面，需要统筹考虑，协调推进。
 
-一、会议背景
-针对${topic}相关工作，需要统一思想，明确任务，确保各项工作有序推进。
+二、主要措施
+1. 明确工作目标和时间节点
+2. 强化责任分工和协调配合
+3. 确保各项工作落实到位
 
-二、主要议题
-1. 分析当前形势和存在的问题
-2. 明确下一步工作重点和措施
-3. 强化责任分工和时间节点
+${notes ? `\n备注：\n${notes}` : ''}
 
-三、会议要求
-1. 各部门要高度重视，认真落实会议精神
-2. 加强沟通协调，形成工作合力
-3. 定期汇报进展情况
+以上内容请各相关方面认真执行，确保工作顺利推进。`,
 
-${notes ? `\n会议补充：\n${notes}` : ''}
 
-会议取得了预期效果，为下一步工作奠定了良好基础。`,
-
-        announcement: `关于${topic}的工作安排
-
-各部门：
-
-为做好${topic}相关工作，现就有关事项安排如下：
-
-一、工作目标
-通过扎实有效的工作措施，确保各项任务顺利完成，取得预期成效。
-
-二、责任分工
-1. 各部门要根据职能分工，明确责任
-2. 建立工作台账，实行清单管理
-3. 定期督查检查，确保工作质量
-
-三、时间要求
-请各部门于本月底前完成相关工作，并及时报送工作情况。
-
-${notes ? `\n特别要求：\n${notes}` : ''}
-
-请各部门高度重视，认真组织实施，确保工作取得实效。
-
-特此通知。`,
-
-        report: `关于${topic}工作情况的汇报
-
-根据要求，现将${topic}工作情况汇报如下：
-
-一、工作开展情况
-我们高度重视此项工作，精心组织，周密部署，各项工作有序推进。
-
-二、主要成效
-1. 思想认识进一步统一
-2. 工作机制进一步完善  
-3. 工作成效进一步显现
-
-三、存在问题
-在工作推进过程中，还存在一些需要关注和解决的问题。
-
-四、下一步工作打算
-1. 进一步加强组织领导
-2. 进一步完善工作措施
-3. 进一步强化督促检查
-
-${notes ? `\n补充汇报：\n${notes}` : ''}
-
-我们将以更高的标准、更严的要求，继续做好相关工作。
-
-以上汇报，请领导指示。`,
-
-        letter: `关于${topic}的函件
-
-尊敬的xxx：
-
-您好！
-
-根据工作需要，现就${topic}相关事宜致函如下：
-
-经认真研究，我们认为此事具有重要意义，需要双方加强沟通协调，共同推进相关工作。
-
-具体建议：
-1. 建立常态化沟通机制
-2. 明确各自职责分工
-3. 加强信息共享交流
-
-${notes ? `\n补充说明：\n${notes}` : ''}
-
-希望能够得到您的支持和配合。如有其他意见建议，请及时沟通。
-
-此致
-敬礼！
-
-日期：${new Date().toLocaleDateString('zh-CN')}`
     };
     
-    let content = templates[contentType] || templates.announcement;
+    let content = templates[contentType] || templates.default;
     
     // 根据字数要求调整内容长度
     if (contentLength && contentLength < 300) {
@@ -609,6 +543,9 @@ function addFileToList(filename, type, size) {
         </button>
     `;
     uploadedFiles.appendChild(fileItem);
+    
+    // 检查是否可以启用AI学习按钮
+    checkLearningButtonStatus();
 }
 
 function removeFile(button) {
@@ -626,6 +563,7 @@ function removeFile(button) {
     }
     
     updateAnalysisStatus();
+    checkLearningButtonStatus();
 }
 
 function getFileType(filename) {
@@ -667,6 +605,7 @@ function saveUrl(input) {
     if (url && isValidUrl(url)) {
         appState.urls.push(url);
         updateAnalysisStatus();
+        checkLearningButtonStatus();
     }
 }
 
@@ -680,6 +619,7 @@ function removeUrl(button) {
     // 从全局状态移除
     appState.urls = appState.urls.filter(u => u !== url);
     updateAnalysisStatus();
+    checkLearningButtonStatus();
 }
 
 function isValidUrl(string) {
@@ -691,6 +631,27 @@ function isValidUrl(string) {
     }
 }
 
+// 检查AI学习按钮状态
+function checkLearningButtonStatus() {
+    const learningBtn = document.getElementById('start-learning-btn');
+    if (!learningBtn) return;
+    
+    const hasFiles = appState.uploadedFiles.length > 0;
+    const hasUrls = appState.urls.length > 0;
+    const hasContent = hasFiles || hasUrls;
+    
+    if (hasContent && !appState.isAnalyzing) {
+        learningBtn.disabled = false;
+        learningBtn.innerHTML = '<i class="fas fa-brain"></i> 开始AI学习';
+    } else if (appState.isAnalyzing) {
+        learningBtn.disabled = true;
+        learningBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在学习中...';
+    } else {
+        learningBtn.disabled = true;
+        learningBtn.innerHTML = '<i class="fas fa-brain"></i> 开始AI学习';
+    }
+}
+
 // 执行风格分析
 async function performStyleAnalysis() {
     if (appState.fileUrls.length === 0 && appState.urls.length === 0) {
@@ -699,6 +660,7 @@ async function performStyleAnalysis() {
     
     appState.isAnalyzing = true;
     updateAnalysisStatus('正在分析风格...');
+    checkLearningButtonStatus();
     
     try {
         // 合并文件URL和用户输入的URL
@@ -756,6 +718,7 @@ async function performStyleAnalysis() {
         }
     } finally {
         appState.isAnalyzing = false;
+        checkLearningButtonStatus();
     }
 }
 
@@ -1227,6 +1190,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // 初始化分析状态
     updateAnalysisStatus('系统已就绪！可直接生成内容，或配置API使用高级功能');
+    
+    // 初始化AI学习按钮状态
+    checkLearningButtonStatus();
     
     // 添加快捷键支持
     document.addEventListener('keydown', function(e) {
