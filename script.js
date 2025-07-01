@@ -10,14 +10,18 @@ let API_CONFIG = {
     },
     // FastGPT配置 - 风格分析
     FASTGPT_STYLE: {
-        baseUrl: 'https://api.fastgpt.in/api',
-        apiKey: 'fastgpt-oCBXIfsNzyuNuzlq3LDXoe8v73SFg4g2MbVKV8GXMMxMpYBRlLyw6' // 风格分析专用密钥
+        baseUrl: 'https://api.fastgpt.in/api', // FastGPT官方API地址
+        apiKey: 'fastgpt-oCBXIfsNzyuNuzlq3LDXoe8v73SFg4g2MbVKV8GXMMxMpYBRlLyw6', // 风格分析专用密钥
+        workflowId: '685c9d7e6adb97a0858caaa6' // 风格分析工作流ID
     },
     // FastGPT配置 - 内容生成
     FASTGPT_CONTENT: {
-        baseUrl: 'https://api.fastgpt.in/api',
-        apiKey: 'fastgpt-p2WSK5LRZZM3tVzk0XRT4vERkQ2PYLXi6rFAZdHzzuB7mSicDLRBXiymej' // 内容生成专用密钥
-    }
+        baseUrl: 'https://api.fastgpt.in/api', // FastGPT官方API地址
+        apiKey: 'fastgpt-p2WSK5LRZZM3tVzk0XRT4vERkQ2PYLXi6rFAZdHzzuB7mSicDLRBXiymej', // 内容生成专用密钥
+        workflowId: '685f87df49b71f158b57ae61' // 内容创作工作流ID
+    },
+    // 接口模式选择：'workflow' 或 'chat'
+    MODE: 'chat' // 默认使用对话接口模式
 };
 
 // 全局状态管理
@@ -29,7 +33,8 @@ const appState = {
     generatedContent: null,
     isUploading: false,
     isAnalyzing: false,
-    isGenerating: false
+    isGenerating: false,
+    chatId: null // 用于对话接口的chatId
 };
 
 // 初始化阿里云OSS客户端
@@ -154,106 +159,215 @@ async function uploadFilesToOSS(files) {
     return uploadResults;
 }
 
-// 调用FastGPT v1对话接口（风格分析）
+// 调用FastGPT工作流接口（风格分析）
 async function callStyleAnalysisWorkflow(articleUrls) {
-    console.log('🔄 调用FastGPT风格分析接口...');
+    console.log('🔄 调用FastGPT风格分析工作流...');
     console.log('文件URLs:', articleUrls);
     
-    const response = await fetch(`${API_CONFIG.FASTGPT_STYLE.baseUrl}/v1/chat/completions`, {
+    if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
+        throw new Error('风格分析工作流ID未配置，请先配置workflowId');
+    }
+    
+    const response = await fetch(`${API_CONFIG.FASTGPT_STYLE.baseUrl}/workflow/run`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${API_CONFIG.FASTGPT_STYLE.apiKey}`
         },
         body: JSON.stringify({
-            chatId: `style_analysis_${Date.now()}`,
-            stream: false,
-            detail: true,
+            workflowId: API_CONFIG.FASTGPT_STYLE.workflowId,
             variables: {
                 article_input: articleUrls
-            },
-            messages: [
-                {
-                    role: "user",
-                    content: `请分析以下文件的语言风格特点：${articleUrls.join(', ')}`
-                }
-            ]
+            }
         })
     });
     
     if (!response.ok) {
         const errorText = await response.text();
-        console.error('FastGPT API错误响应:', response.status, errorText);
-        throw new Error(`风格分析API调用失败: ${response.status} - ${errorText}`);
+        console.error('FastGPT工作流错误响应:', response.status, errorText);
+        throw new Error(`风格分析工作流调用失败: ${response.status} - ${errorText}`);
     }
     
     const result = await response.json();
-    console.log('✅ FastGPT风格分析响应:', result);
+    console.log('✅ FastGPT风格分析工作流响应:', result);
     
-    // 从choices中获取分析结果
-    if (result.choices && result.choices[0] && result.choices[0].message) {
-        return result.choices[0].message.content || '正式严谨，条理清晰，用词准确';
+    // 从工作流输出中获取style_output
+    if (result && result.style_output) {
+        return result.style_output;
     }
     
-    throw new Error('无法获取风格分析结果');
+    // 如果没有style_output，尝试从其他可能的字段获取
+    if (result && result.data && result.data.style_output) {
+        return result.data.style_output;
+    }
+    
+    console.warn('工作流响应格式异常:', result);
+    throw new Error('无法从工作流获取风格分析结果');
 }
 
-// 调用FastGPT v1对话接口（内容生成）
+// 调用FastGPT工作流接口（内容生成）
 async function callContentGenerationWorkflow(styleOutput, contentLength, topic, styleType, remark) {
-    console.log('🔄 调用FastGPT内容生成接口...');
+    console.log('🔄 调用FastGPT内容生成工作流...');
     console.log('参数:', { styleOutput, contentLength, topic, styleType, remark });
     
-    // 构建提示词
-    let prompt = `请根据以下要求生成${styleType}内容：
-
-主题：${topic}
-字数要求：${contentLength}字
-语言风格：${styleOutput}
-${remark ? `补充说明：${remark}` : ''}
-
-请生成专业、规范的${styleType}内容。`;
-
-    const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`, {
+    if (!API_CONFIG.FASTGPT_CONTENT.workflowId) {
+        throw new Error('内容生成工作流ID未配置，请先配置workflowId');
+    }
+    
+    const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/workflow/run`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${API_CONFIG.FASTGPT_CONTENT.apiKey}`
         },
         body: JSON.stringify({
-            chatId: `content_generation_${Date.now()}`,
-            stream: false,
-            detail: true,
+            workflowId: API_CONFIG.FASTGPT_CONTENT.workflowId,
             variables: {
                 style_output: styleOutput,
                 content_length: contentLength,
                 topic: topic,
                 style_type: styleType,
                 remark: remark || ''
-            },
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ]
+            }
         })
     });
     
     if (!response.ok) {
         const errorText = await response.text();
-        console.error('FastGPT API错误响应:', response.status, errorText);
-        throw new Error(`内容生成API调用失败: ${response.status} - ${errorText}`);
+        console.error('FastGPT工作流错误响应:', response.status, errorText);
+        throw new Error(`内容生成工作流调用失败: ${response.status} - ${errorText}`);
     }
     
     const result = await response.json();
-    console.log('✅ FastGPT内容生成响应:', result);
+    console.log('✅ FastGPT内容生成工作流响应:', result);
     
-    // 从choices中获取生成结果
-    if (result.choices && result.choices[0] && result.choices[0].message) {
+    // 从工作流输出中获取AIcontent_output
+    if (result && result.AIcontent_output) {
+        return result.AIcontent_output;
+    }
+    
+    // 如果没有AIcontent_output，尝试从其他可能的字段获取
+    if (result && result.data && result.data.AIcontent_output) {
+        return result.data.AIcontent_output;
+    }
+    
+    console.warn('工作流响应格式异常:', result);
+    throw new Error('无法从工作流获取内容生成结果');
+}
+
+// 新增：FastGPT 对话接口调用
+async function callChatCompletions(messages, customUid = null) {
+    console.log('🔄 调用FastGPT对话接口...');
+    console.log('消息:', messages);
+    
+    // 生成或使用已存在的chatId
+    if (!appState.chatId) {
+        appState.chatId = Date.now().toString();
+    }
+    
+    const requestBody = {
+        chatId: appState.chatId,
+        stream: false,
+        detail: false,
+        messages: messages
+    };
+    
+    // 如果提供了自定义用户ID，添加到请求中
+    if (customUid) {
+        requestBody.customUid = customUid;
+    }
+    
+    const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_CONFIG.FASTGPT_CONTENT.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error('FastGPT对话接口错误响应:', response.status, errorText);
+        
+        // 特殊处理常见错误
+        if (errorText.includes('Key is error')) {
+            throw new Error('API密钥错误：请使用应用专用密钥而不是账户密钥');
+        }
+        
+        throw new Error(`对话接口调用失败: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ FastGPT对话接口响应:', result);
+    
+    // 从响应中提取内容
+    if (result && result.choices && result.choices[0] && result.choices[0].message) {
         return result.choices[0].message.content;
     }
     
-    throw new Error('无法获取内容生成结果');
+    console.warn('对话接口响应格式异常:', result);
+    throw new Error('无法从对话接口获取响应内容');
+}
+
+// 新增：使用对话接口进行风格分析
+async function analyzeStyleWithChat(articleUrls) {
+    const messages = [
+        {
+            role: "user",
+            content: `请分析以下文档链接中的写作风格特点：
+
+${articleUrls.map((url, index) => `${index + 1}. ${url}`).join('\n')}
+
+请从以下几个方面分析写作风格：
+1. 语言特点（正式/非正式、简洁/详细）
+2. 句式结构（长短句比例、复杂度）
+3. 用词偏好（专业术语、常用词汇）
+4. 表达习惯（逻辑结构、过渡词）
+5. 整体语调（严肃/轻松、客观/主观）
+
+请用简洁的语言总结出主要的风格特征。`
+        }
+    ];
+    
+    return await callChatCompletions(messages);
+}
+
+// 新增：使用对话接口进行内容生成
+async function generateContentWithChat(styleOutput, contentLength, topic, styleType, remark) {
+    const messages = [
+        {
+            role: "user",
+            content: `请根据以下要求生成内容：
+
+**写作风格参考：**
+${styleOutput}
+
+**内容要求：**
+- 主题：${topic}
+- 文档类型：${getContentTypeDisplayName(styleType)}
+- 字数要求：${contentLength || '适中'}字
+- 补充说明：${remark || '无'}
+
+请严格按照参考的写作风格，生成一份${getContentTypeDisplayName(styleType)}。
+要求语言风格与参考保持一致，内容结构完整，逻辑清晰。`
+        }
+    ];
+    
+    return await callChatCompletions(messages);
+}
+
+// 辅助函数：获取内容类型显示名称
+function getContentTypeDisplayName(type) {
+    const typeMap = {
+        'speech': '发言稿',
+        'email': '工作邮件',
+        'meeting': '会议纪要',
+        'announcement': '工作安排',
+        'report': '工作汇报',
+        'letter': '正式函件'
+    };
+    return typeMap[type] || '文档';
 }
 
 // 本地备用内容生成
@@ -592,8 +706,20 @@ async function performStyleAnalysis() {
         
         console.log('开始风格分析，文件URL:', allUrls);
         
-        // 调用风格分析工作流
-        const styleOutput = await callStyleAnalysisWorkflow(allUrls);
+        let styleOutput;
+        
+        // 根据配置的模式选择接口
+        if (API_CONFIG.MODE === 'chat' && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+            // 使用对话接口
+            console.log('🔄 使用对话接口进行风格分析');
+            styleOutput = await analyzeStyleWithChat(allUrls);
+        } else if (API_CONFIG.FASTGPT_STYLE.workflowId && API_CONFIG.FASTGPT_STYLE.apiKey) {
+            // 使用工作流接口
+            console.log('🔄 使用工作流接口进行风格分析');
+            styleOutput = await callStyleAnalysisWorkflow(allUrls);
+        } else {
+            throw new Error('请配置FastGPT API密钥和工作流ID，或切换到对话模式');
+        }
         
         appState.styleOutput = styleOutput;
         updateAnalysisStatus(`风格分析完成：${styleOutput}`);
@@ -603,21 +729,25 @@ async function performStyleAnalysis() {
         console.error('风格分析失败:', error);
         
         // 检查是否是API配置问题
-        if (!API_CONFIG.FASTGPT_STYLE.apiKey) {
-            console.warn('💡 FastGPT风格分析API密钥未配置');
+        if (!API_CONFIG.FASTGPT_STYLE.apiKey || !API_CONFIG.FASTGPT_STYLE.workflowId) {
+            console.warn('💡 FastGPT风格分析配置不完整');
             appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
             updateAnalysisStatus(`使用默认专业风格：${appState.styleOutput}`);
-            showToast('FastGPT未配置，使用默认专业风格', 'info');
+            if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
+                showToast('需要配置工作流ID，当前使用默认风格', 'info');
+            } else {
+                showToast('FastGPT未配置，使用默认专业风格', 'info');
+            }
         } else if (error.message.includes('Key is error') || error.message.includes('app key')) {
             console.warn('💡 需要使用应用专用API密钥，不是账户密钥');
             appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
             updateAnalysisStatus(`需要应用密钥，使用专业风格：${appState.styleOutput}`);
             showToast('请使用应用专用API密钥。当前使用专业模板', 'warning');
-        } else if (error.message.includes('CORS') || error.message.includes('blocked')) {
-            console.warn('💡 CORS限制或网络问题');
+        } else if (error.message.includes('CORS') || error.message.includes('blocked') || error.message.includes('Failed to fetch')) {
+            console.warn('💡 CORS跨域限制或FastGPT服务连接问题');
             appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
-            updateAnalysisStatus(`网络限制，使用专业风格：${appState.styleOutput}`);
-            showToast('网络限制，使用专业模板风格', 'success');
+            updateAnalysisStatus(`FastGPT连接受限，使用专业风格：${appState.styleOutput}`);
+            showToast('FastGPT暂时无法连接，已启用专业模板模式', 'success');
         } else {
             console.warn('💡 API调用失败，使用默认风格');
             appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
@@ -694,14 +824,32 @@ async function generateContent() {
     appState.isGenerating = true;
     
     try {
-        // 尝试调用内容生成工作流
-        const generatedContent = await callContentGenerationWorkflow(
-            appState.styleOutput,
-            contentLength,
-            topic,
-            contentType,
-            notes
-        );
+        let generatedContent;
+        
+        // 根据配置的模式选择接口
+        if (API_CONFIG.MODE === 'chat' && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+            // 使用对话接口
+            console.log('🔄 使用对话接口进行内容生成');
+            generatedContent = await generateContentWithChat(
+                appState.styleOutput,
+                contentLength,
+                topic,
+                contentType,
+                notes
+            );
+        } else if (API_CONFIG.FASTGPT_CONTENT.workflowId && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+            // 使用工作流接口
+            console.log('🔄 使用工作流接口进行内容生成');
+            generatedContent = await callContentGenerationWorkflow(
+                appState.styleOutput,
+                contentLength,
+                topic,
+                contentType,
+                notes
+            );
+        } else {
+            throw new Error('请配置FastGPT API密钥和工作流ID，或切换到对话模式');
+        }
         
         // 显示结果
         displayResult(generatedContent);
@@ -935,16 +1083,21 @@ function setAPIConfig(config) {
 function checkAPIConfig() {
     const hasStyleKey = API_CONFIG.FASTGPT_STYLE.apiKey;
     const hasContentKey = API_CONFIG.FASTGPT_CONTENT.apiKey;
+    const hasStyleWorkflow = API_CONFIG.FASTGPT_STYLE.workflowId;
+    const hasContentWorkflow = API_CONFIG.FASTGPT_CONTENT.workflowId;
     
-    if (hasStyleKey && hasContentKey) {
-        console.log('✅ FastGPT配置完成');
-        console.log('🎨 风格分析密钥：', API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '...');
-        console.log('📝 内容生成密钥：', API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...');
+    if (hasStyleKey && hasContentKey && hasStyleWorkflow && hasContentWorkflow) {
+        console.log('✅ FastGPT配置完整');
+        console.log('🎨 风格分析:', API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '... | 工作流:', hasStyleWorkflow);
+        console.log('📝 内容生成:', API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '... | 工作流:', hasContentWorkflow);
         return true;
     } else {
         console.log('💡 FastGPT配置不完整');
         if (!hasStyleKey) console.log('❌ 缺少风格分析密钥');
         if (!hasContentKey) console.log('❌ 缺少内容生成密钥');
+        if (!hasStyleWorkflow) console.log('❌ 缺少风格分析工作流ID');
+        if (!hasContentWorkflow) console.log('❌ 缺少内容生成工作流ID');
+        console.log('💡 请获取您的工作流ID并配置');
         return false;
     }
 }
@@ -1031,6 +1184,21 @@ function loadConfigFromStorage() {
     }
 }
 
+// 简化初始化检查
+async function checkAPIConnection() {
+    if (API_CONFIG.FASTGPT_CONTENT.apiKey) {
+        console.log('✅ 检测到API密钥，可以开始使用');
+        showToast('系统已就绪，可以开始使用FastGPT功能', 'success');
+        return true;
+    } else {
+        console.log('💡 请配置API密钥开始使用');
+        showToast('请在控制台配置API密钥：setApiKey("你的密钥")', 'info');
+        return false;
+    }
+}
+
+
+
 // 页面加载完成后的初始化
 document.addEventListener('DOMContentLoaded', async function() {
     // 从本地存储加载配置
@@ -1038,6 +1206,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // 设置默认风格，确保系统始终可用
     appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强，表达规范';
+    
+    // 检查API连接状态
+    await checkAPIConnection();
     
     // 检查配置并初始化
     checkAPIConfig();
@@ -1092,11 +1263,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(() => {
         const hasStyleKey = API_CONFIG.FASTGPT_STYLE.apiKey;
         const hasContentKey = API_CONFIG.FASTGPT_CONTENT.apiKey;
+        const hasStyleWorkflow = API_CONFIG.FASTGPT_STYLE.workflowId;
+        const hasContentWorkflow = API_CONFIG.FASTGPT_CONTENT.workflowId;
         
-        if (hasStyleKey && hasContentKey) {
-            showToast('老板专属知识库已就绪！FastGPT双密钥已配置，功能完整', 'success');
+        if (hasStyleKey && hasContentKey && hasStyleWorkflow && hasContentWorkflow) {
+            showToast('老板专属知识库已就绪！FastGPT工作流已配置，功能完整', 'success');
         } else {
-            showToast('老板专属知识库已就绪！可直接使用模板，或配置FastGPT获得AI功能', 'info');
+            showToast('老板专属知识库已就绪！可直接使用模板，或配置FastGPT工作流获得AI功能', 'info');
+            
+            // 详细配置提示
+            console.log('💡 当前配置状态:');
+            console.log(`  风格分析密钥: ${hasStyleKey ? '✅' : '❌'}`);
+            console.log(`  内容生成密钥: ${hasContentKey ? '✅' : '❌'}`);
+            console.log(`  风格分析工作流: ${hasStyleWorkflow ? '✅' : '❌'}`);
+            console.log(`  内容生成工作流: ${hasContentWorkflow ? '✅' : '❌'}`);
+            console.log('💡 查看完整配置: showConfig()');
         }
     }, 2000);
 });
@@ -1121,12 +1302,198 @@ window.setContentKey = function(apiKey) {
     showToast('内容生成API配置成功', 'success');
 };
 
+// 配置工作流ID
+window.setStyleWorkflowId = function(workflowId) {
+    API_CONFIG.FASTGPT_STYLE.workflowId = workflowId;
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    console.log('✅ 风格分析工作流ID已更新');
+    console.log('Workflow ID:', workflowId);
+    showToast('风格分析工作流配置成功', 'success');
+};
+
+window.setContentWorkflowId = function(workflowId) {
+    API_CONFIG.FASTGPT_CONTENT.workflowId = workflowId;
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    console.log('✅ 内容生成工作流ID已更新');
+    console.log('Workflow ID:', workflowId);
+    showToast('内容生成工作流配置成功', 'success');
+};
+
 // 显示当前配置
 window.showConfig = function() {
     console.log('=== 当前FastGPT配置 ===');
-    console.log('风格分析BaseURL:', API_CONFIG.FASTGPT_STYLE.baseUrl);
-    console.log('风格分析API Key:', API_CONFIG.FASTGPT_STYLE.apiKey ? API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '...' : '未配置');
-    console.log('内容生成BaseURL:', API_CONFIG.FASTGPT_CONTENT.baseUrl);
-    console.log('内容生成API Key:', API_CONFIG.FASTGPT_CONTENT.apiKey ? API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...' : '未配置');
+    console.log('🔧 接口模式:', API_CONFIG.MODE === 'chat' ? '对话接口模式' : '工作流接口模式');
+    console.log('🎨 风格分析配置:');
+    console.log('  API Key:', API_CONFIG.FASTGPT_STYLE.apiKey ? API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '...' : '❌ 未配置');
+    console.log('  Workflow ID:', API_CONFIG.FASTGPT_STYLE.workflowId || '❌ 未配置');
+    console.log('📝 内容生成配置:');
+    console.log('  API Key:', API_CONFIG.FASTGPT_CONTENT.apiKey ? API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...' : '❌ 未配置');
+    console.log('  Workflow ID:', API_CONFIG.FASTGPT_CONTENT.workflowId || '❌ 未配置');
+    console.log('🌐 API地址:', API_CONFIG.FASTGPT_CONTENT.baseUrl);
     console.log('========================');
-}; 
+    
+    // 配置提示
+    console.log('💡 快速配置命令:');
+    console.log('  设置API密钥: setApiKey("fastgpt-你的密钥")');
+    console.log('  切换到对话模式: setMode("chat")');
+    console.log('  切换到工作流模式: setMode("workflow")');
+    if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
+        console.log('  配置风格分析工作流: setStyleWorkflowId("您的工作流ID")');
+    }
+    if (!API_CONFIG.FASTGPT_CONTENT.workflowId) {
+        console.log('  配置内容生成工作流: setContentWorkflowId("您的工作流ID")');
+    }
+    console.log('  测试API连接: testApi()');
+};
+
+// 新增：设置接口模式
+window.setMode = function(mode) {
+    if (mode !== 'chat' && mode !== 'workflow') {
+        console.error('❌ 模式必须是 "chat" 或 "workflow"');
+        return;
+    }
+    
+    API_CONFIG.MODE = mode;
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    
+    console.log(`✅ 接口模式已切换为: ${mode === 'chat' ? '对话接口模式' : '工作流接口模式'}`);
+    
+    if (mode === 'chat') {
+        console.log('💡 对话模式说明:');
+        console.log('  - 使用 /v1/chat/completions 接口');
+        console.log('  - 需要应用专用API密钥');
+        console.log('  - 适合简单的对话和内容生成');
+        console.log('  - 设置密钥: setApiKey("fastgpt-你的应用密钥")');
+    } else {
+        console.log('💡 工作流模式说明:');
+        console.log('  - 使用 /workflow/run 接口');
+        console.log('  - 需要配置工作流ID');
+        console.log('  - 适合复杂的文档分析和内容生成');
+        console.log('  - 配置工作流: setStyleWorkflowId() 和 setContentWorkflowId()');
+    }
+    
+    showToast(`已切换到${mode === 'chat' ? '对话' : '工作流'}接口模式`, 'success');
+};
+
+// 新增：统一设置API密钥（同时设置风格分析和内容生成）
+window.setApiKey = function(apiKey) {
+    if (!apiKey || !apiKey.startsWith('fastgpt-')) {
+        console.error('❌ API密钥格式错误，应以 "fastgpt-" 开头');
+        return;
+    }
+    
+    API_CONFIG.FASTGPT_STYLE.apiKey = apiKey;
+    API_CONFIG.FASTGPT_CONTENT.apiKey = apiKey;
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    
+    console.log('✅ FastGPT API密钥已设置');
+    console.log('API Key:', apiKey.substring(0, 20) + '...');
+    showToast('FastGPT API密钥配置成功', 'success');
+    
+    // 如果是对话模式，提示可以直接使用
+    if (API_CONFIG.MODE === 'chat') {
+        console.log('💡 当前为对话模式，可以直接使用！');
+        showToast('对话模式已就绪，可以开始生成内容', 'info');
+    }
+};
+
+// 新增：测试API连接 - 直接按照官方示例调用
+window.testApi = async function() {
+    console.log('🔄 测试FastGPT API连接...');
+    
+    if (!API_CONFIG.FASTGPT_CONTENT.apiKey) {
+        console.error('❌ 请先配置API密钥: setApiKey("fastgpt-你的密钥")');
+        return;
+    }
+    
+    try {
+        console.log('📡 API配置:');
+        console.log('  URL:', `${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`);
+        console.log('  API Key:', API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...');
+        
+        // 完全按照官方示例的格式调用
+        const requestBody = {
+            "chatId": "111",
+            "stream": false,
+            "detail": false,
+            "messages": [
+                {
+                    "content": "测试连接，请回复：连接成功",
+                    "role": "user"
+                }
+            ]
+        };
+        
+        console.log('📤 请求数据:', requestBody);
+        
+        const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${API_CONFIG.FASTGPT_CONTENT.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        console.log('📥 响应状态:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ API错误响应:', errorText);
+            throw new Error(`API调用失败: ${response.status} - ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ API响应成功:', result);
+        
+        if (result && result.choices && result.choices[0] && result.choices[0].message) {
+            console.log('💬 AI回复:', result.choices[0].message.content);
+            showToast('FastGPT API连接成功！', 'success');
+        } else {
+            console.warn('⚠️ 响应格式异常:', result);
+            showToast('API连接成功但响应格式异常', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('❌ API测试失败:', error);
+        
+        if (error.message.includes('Key is error')) {
+            console.log('💡 错误原因: 使用了错误的密钥类型');
+            console.log('📌 解决方案: 请使用应用专用密钥，不是账户密钥');
+            showToast('API密钥类型错误，请使用应用专用密钥', 'error');
+        } else if (error.message.includes('CORS')) {
+            console.log('💡 错误原因: CORS跨域限制');
+            console.log('📌 解决方案: 这确实需要代理服务器');
+            showToast('遇到CORS跨域限制，需要代理服务器', 'error');
+        } else {
+            showToast('API测试失败: ' + error.message, 'error');
+        }
+    }
+};
+
+// 新增：快速配置指南
+window.quickSetup = function() {
+    console.log('=== FastGPT 快速配置指南 ===');
+    console.log('');
+    console.log('🎯 简单配置（对话接口）');
+    console.log('1. 获取应用专用API密钥');
+    console.log('2. setApiKey("fastgpt-你的应用密钥")');
+    console.log('3. testApi() // 测试连接');
+    console.log('');
+    console.log('🎯 高级配置（工作流接口）');
+    console.log('1. setMode("workflow")');
+    console.log('2. setApiKey("fastgpt-你的密钥")');
+    console.log('3. setStyleWorkflowId("风格分析工作流ID")');
+    console.log('4. setContentWorkflowId("内容生成工作流ID")');
+    console.log('');
+    console.log('🔧 常用命令:');
+    console.log('- showConfig() // 查看当前配置');
+    console.log('- testApi() // 测试API连接');
+    console.log('');
+    console.log('📋 API密钥获取位置:');
+    console.log('👉 登录FastGPT → 我的应用 → 选择应用 → API密钥');
+    console.log('⚠️ 注意：使用应用专用密钥，不是账户密钥');
+    console.log('===========================');
+};
+
+ 
