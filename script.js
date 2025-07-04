@@ -282,8 +282,8 @@ async function callContentGenerationWorkflow(styleOutput, contentLength, topic, 
     throw new Error('无法从工作流获取内容生成结果');
 }
 
-// 新增：FastGPT 对话接口调用
-async function callChatCompletions(messages, customUid = null, variables = null) {
+// 新增：FastGPT 对话接口调用（支持自定义API密钥和workflowId）
+async function callChatCompletions(messages, customUid = null, variables = null, apiKey = null, workflowId = null) {
     console.log('🔄 调用FastGPT对话接口...');
     console.log('消息:', messages);
     console.log('变量:', variables);
@@ -309,12 +309,16 @@ async function callChatCompletions(messages, customUid = null, variables = null)
     if (variables) {
         requestBody.variables = variables;
     }
+    // 如果提供了workflowId，添加到请求中（FastGPT官方支持）
+    if (workflowId) {
+        requestBody.workflowId = workflowId;
+    }
     
     const response = await fetch(`/api/fastgpt/v1/chat/completions`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${API_CONFIG.FASTGPT_CONTENT.apiKey}`
+            'Authorization': `Bearer ${apiKey || API_CONFIG.FASTGPT_CONTENT.apiKey}`
         },
         body: JSON.stringify(requestBody)
     });
@@ -346,30 +350,19 @@ async function callChatCompletions(messages, customUid = null, variables = null)
 // 新增：使用对话接口进行风格分析
 async function analyzeStyleWithChat(articleUrls) {
     console.log('🔄 使用对话接口进行风格分析，传递文件URL...');
-    
     const messages = [
         {
             role: "user",
-            content: `请分析提供的文档中的写作风格特点。
-
-请从以下几个方面分析写作风格：
-1. 语言特点（正式/非正式、简洁/详细）
-2. 句式结构（长短句比例、复杂度）
-3. 用词偏好（专业术语、常用词汇）
-4. 表达习惯（逻辑结构、过渡词）
-5. 整体语调（严肃/轻松、客观/主观）
-
-请用简洁的语言总结出主要的风格特征。`
+            content: `请分析提供的文档中的写作风格特点。\n\n请从以下几个方面分析写作风格：\n1. 语言特点（正式/非正式、简洁/详细）\n2. 句式结构（长短句比例、复杂度）\n3. 用词偏好（专业术语、常用词汇）\n4. 表达习惯（逻辑结构、过渡词）\n5. 整体语调（严肃/轻松、客观/主观）\n\n请用简洁的语言总结出主要的风格特征。`
         }
     ];
-    
-    // 通过variables参数传递文件URL，就像工作流接口一样
+    // 通过variables参数传递文件URL
     const variables = {
         article_input: appState.fileUrls,  // 文件URL数组
         url_input: appState.urls           // 用户输入URL数组
     };
-    
-    return await callChatCompletions(messages, null, variables);
+    // 强制使用风格分析密钥和workflowId
+    return await callChatCompletions(messages, null, variables, API_CONFIG.FASTGPT_STYLE.apiKey, API_CONFIG.FASTGPT_STYLE.workflowId);
 }
 
 // 新增：使用对话接口进行内容生成
