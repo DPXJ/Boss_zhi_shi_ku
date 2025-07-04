@@ -161,14 +161,15 @@ async function uploadFilesToOSS(files) {
 
 // 调用FastGPT工作流接口（风格分析）
 async function callStyleAnalysisWorkflow(fileUrls, userUrls) {
+    // 保证参数为数组
+    const safeFileUrls = Array.isArray(fileUrls) ? fileUrls : [];
+    const safeUserUrls = Array.isArray(userUrls) ? userUrls : [];
     console.log('🔄 调用FastGPT风格分析工作流...');
-    console.log('文件URLs:', fileUrls);
-    console.log('用户URLs:', userUrls);
-    
+    console.log('文件URLs:', safeFileUrls);
+    console.log('用户URLs:', safeUserUrls);
     if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
         throw new Error('风格分析工作流ID未配置，请先配置workflowId');
     }
-    
     const response = await fetch(`/api/fastgpt/workflow/run`, {
         method: 'POST',
         headers: {
@@ -178,18 +179,16 @@ async function callStyleAnalysisWorkflow(fileUrls, userUrls) {
         body: JSON.stringify({
             workflowId: API_CONFIG.FASTGPT_STYLE.workflowId,
             variables: {
-                article_input: fileUrls,  // 文件URL数组
-                url_input: userUrls       // 用户输入URL数组
+                article_input: safeFileUrls,  // 文件URL数组
+                url_input: safeUserUrls      // 用户输入URL数组
             }
         })
     });
-    
     if (!response.ok) {
         const errorText = await response.text();
         console.error('FastGPT工作流错误响应:', response.status, errorText);
         throw new Error(`风格分析工作流调用失败: ${response.status} - ${errorText}`);
     }
-    
     const result = await response.json();
     console.log('✅ FastGPT风格分析工作流响应:', result);
     
@@ -347,21 +346,19 @@ async function callChatCompletions(messages, customUid = null, variables = null,
     throw new Error('无法从对话接口获取响应内容');
 }
 
-// 新增：使用对话接口进行风格分析
-async function analyzeStyleWithChat(articleUrls) {
-    console.log('🔄 使用对话接口进行风格分析，传递文件URL...');
+// 新增：使用对话接口进行风格分析（只传递空内容的user message和变量）
+async function analyzeStyleWithChat(article_input, url_input) {
+    // 保证参数为数组
+    const safeArticleInput = Array.isArray(article_input) ? article_input : [];
+    const safeUrlInput = Array.isArray(url_input) ? url_input : [];
+    // 传递一个空内容的user message，避免接口报错
     const messages = [
-        {
-            role: "user",
-            content: `请分析提供的文档中的写作风格特点。\n\n请从以下几个方面分析写作风格：\n1. 语言特点（正式/非正式、简洁/详细）\n2. 句式结构（长短句比例、复杂度）\n3. 用词偏好（专业术语、常用词汇）\n4. 表达习惯（逻辑结构、过渡词）\n5. 整体语调（严肃/轻松、客观/主观）\n\n请用简洁的语言总结出主要的风格特征。`
-        }
+        { role: 'user', content: '' }
     ];
-    // 通过variables参数传递文件URL
     const variables = {
-        article_input: appState.fileUrls,  // 文件URL数组
-        url_input: appState.urls           // 用户输入URL数组
+        article_input: safeArticleInput,
+        url_input: safeUrlInput
     };
-    // 强制使用风格分析密钥和workflowId
     return await callChatCompletions(messages, null, variables, API_CONFIG.FASTGPT_STYLE.apiKey, API_CONFIG.FASTGPT_STYLE.workflowId);
 }
 
@@ -499,21 +496,14 @@ function selectFiles() {
 document.getElementById('file-input').addEventListener('change', async function(e) {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    
-    // 检查API配置
     if (!API_CONFIG.OSS.accessKeyId) {
         showToast('请先配置OSS API信息', 'error');
         return;
     }
-    
     appState.isUploading = true;
     updateUploadStatus('正在上传文件...');
-    
     try {
-        // 上传文件到OSS
         const fileUrls = await uploadFilesToOSS(files);
-        
-        // 添加文件到界面显示
         files.forEach((file, index) => {
             addFileToList(file.name, getFileType(file.name), formatFileSize(file.size));
             appState.uploadedFiles.push({
@@ -523,19 +513,12 @@ document.getElementById('file-input').addEventListener('change', async function(
                 url: fileUrls[index]
             });
         });
-        
-        // 保存文件URL到全局状态
         appState.fileUrls.push(...fileUrls);
-        
         showToast(`成功上传 ${files.length} 个文件`, 'success');
-        
-        // 开始风格分析
-        await performStyleAnalysis();
-        
+        checkLearningButtonStatus();
+        updateAnalysisStatus(`已上传 ${appState.uploadedFiles.length} 个文件，${appState.urls.length} 个链接。可继续添加或点击\"开始AI学习\"`);
     } catch (error) {
         console.error('文件上传失败:', error);
-        
-        // 提供更详细的错误信息
         let errorMsg = '文件上传失败: ';
         if (error.message && error.message.includes('XMLHttpRequest')) {
             errorMsg += 'CORS跨域问题，请检查OSS跨域设置';
@@ -546,10 +529,7 @@ document.getElementById('file-input').addEventListener('change', async function(
         } else {
             errorMsg += error.message || '未知错误';
         }
-        
         showToast(errorMsg, 'error');
-        
-        // 提供解决建议
         console.log('🔧 文件上传失败解决建议:');
         console.log('1. 确认CORS设置正确');
         console.log('2. 运行 diagnoseOSSIssues() 进行全面诊断');
@@ -559,8 +539,7 @@ document.getElementById('file-input').addEventListener('change', async function(
         appState.isUploading = false;
         updateUploadStatus('');
     }
-    
-    e.target.value = ''; // 清空输入框
+    e.target.value = '';
 });
 
 function addFileToList(filename, type, size) {
@@ -684,89 +663,67 @@ function checkLearningButtonStatus() {
     }
 }
 
-// 执行风格分析
+// 新增：收集所有URL输入框内容，确保全部加入appState.urls
+function collectAllUrls() {
+    const urlInputs = document.querySelectorAll('.url-input');
+    const urls = [];
+    urlInputs.forEach(input => {
+        input.blur(); // 强制失去焦点，确保onchange被触发
+        const url = input.value.trim();
+        if (url && isValidUrl(url)) {
+            urls.push(url);
+        }
+    });
+    appState.urls = urls.filter(Boolean); // 只保留非空字符串
+    console.log('收集到的链接:', appState.urls);
+}
+
+// 执行风格分析（只在按钮点击时触发，变量名严格一致，始终传递数组）
 async function performStyleAnalysis() {
-    if (appState.fileUrls.length === 0 && appState.urls.length === 0) {
+    // 自动收集所有输入框内容，防止遗漏
+    collectAllUrls();
+    // 保证全局状态为数组
+    if (!Array.isArray(appState.fileUrls)) appState.fileUrls = [];
+    if (!Array.isArray(appState.urls)) appState.urls = [];
+    const article_input = Array.isArray(appState.fileUrls) ? [...appState.fileUrls] : [];
+    const url_input = Array.isArray(appState.urls) ? [...appState.urls] : [];
+    if (article_input.length === 0 && url_input.length === 0) {
+        showToast('请先上传文件或添加链接', 'info');
         return;
     }
-    
     appState.isAnalyzing = true;
     updateAnalysisStatus('正在分析风格...');
     checkLearningButtonStatus();
-    
     try {
-        // 合并文件URL和用户输入的URL
-        const allUrls = [...appState.fileUrls, ...appState.urls];
-        
-        console.log('开始风格分析，文件URL:', allUrls);
-        
-        let rawStyleOutput; // 保存原始结果
         let styleOutput;
-        
-        // 根据配置的模式选择接口
         if (API_CONFIG.MODE === 'chat') {
-            // 使用对话接口
-            if (!API_CONFIG.FASTGPT_CONTENT.apiKey) {
-                throw new Error('对话模式需要配置API密钥');
+            if (!API_CONFIG.FASTGPT_STYLE.apiKey) {
+                throw new Error('对话模式需要配置风格分析API密钥');
             }
-            console.log('🔄 使用对话接口进行风格分析');
-            
-            // 提示用户对话模式的工作原理
-            updateAnalysisStatus('对话模式：正在分析文件内容...');
-            showToast('对话模式：通过variables传递文件URL', 'info');
-            
-            styleOutput = await analyzeStyleWithChat(allUrls);
+            styleOutput = await analyzeStyleWithChat(article_input, url_input);
         } else if (API_CONFIG.MODE === 'workflow') {
-            // 使用工作流接口
             if (!API_CONFIG.FASTGPT_STYLE.workflowId || !API_CONFIG.FASTGPT_STYLE.apiKey) {
                 throw new Error('工作流模式需要配置API密钥和工作流ID');
             }
-            console.log('🔄 使用工作流接口进行风格分析');
-            styleOutput = await callStyleAnalysisWorkflow(appState.fileUrls, appState.urls);
+            styleOutput = await callStyleAnalysisWorkflow(article_input, url_input);
         } else {
             throw new Error('请设置正确的接口模式（chat 或 workflow）');
         }
-        
         appState.styleOutput = styleOutput;
-        updateAnalysisStatus(`风格分析完成：${styleOutput}`);
+        updateAnalysisStatus(); // 只展示风格分析结果
         showToast('风格分析完成', 'success');
-        
     } catch (error) {
         console.error('风格分析失败:', error);
-        
-        // 检查是否是API配置问题
-        if (!API_CONFIG.FASTGPT_STYLE.apiKey || !API_CONFIG.FASTGPT_STYLE.workflowId) {
-            console.warn('💡 FastGPT风格分析配置不完整');
-            appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
-            updateAnalysisStatus(`使用默认专业风格：${appState.styleOutput}`);
-            if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
-                showToast('需要配置工作流ID，当前使用默认风格', 'info');
-            } else {
-                showToast('FastGPT未配置，使用默认专业风格', 'info');
-            }
-        } else if (error.message.includes('Key is error') || error.message.includes('app key')) {
-            console.warn('💡 需要使用应用专用API密钥，不是账户密钥');
-            appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
-            updateAnalysisStatus(`需要应用密钥，使用专业风格：${appState.styleOutput}`);
-            showToast('请使用应用专用API密钥。当前使用专业模板', 'warning');
-        } else if (error.message.includes('CORS') || error.message.includes('blocked') || error.message.includes('Failed to fetch')) {
-            console.warn('💡 CORS跨域限制或FastGPT服务连接问题');
-            appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
-            updateAnalysisStatus(`FastGPT连接受限，使用专业风格：${appState.styleOutput}`);
-            showToast('FastGPT暂时无法连接，已启用专业模板模式', 'success');
-        } else {
-            console.warn('💡 API调用失败，使用默认风格');
-            appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
-            updateAnalysisStatus(`API异常，使用专业风格：${appState.styleOutput}`);
-            showToast('使用专业模板风格，功能完全可用', 'success');
-        }
+        appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
+        updateAnalysisStatus();
+        showToast('风格分析失败，已使用默认风格', 'warning');
     } finally {
         appState.isAnalyzing = false;
         checkLearningButtonStatus();
     }
 }
 
-// 更新分析状态显示
+// 只展示风格分析结果
 function updateAnalysisStatus(message = '') {
     const statusItems = document.querySelectorAll('.status-item span');
     if (statusItems.length >= 2) {
@@ -774,14 +731,12 @@ function updateAnalysisStatus(message = '') {
             statusItems[0].textContent = message;
             statusItems[1].textContent = '';
         } else {
-            const fileCount = appState.uploadedFiles.length;
-            const urlCount = appState.urls.length;
-            statusItems[0].textContent = `已分析 ${fileCount} 个文件，${urlCount} 个链接`;
-            
             if (appState.styleOutput) {
-                statusItems[1].textContent = `识别到语言风格：${appState.styleOutput}`;
+                statusItems[0].textContent = `风格分析结果：${appState.styleOutput}`;
+                statusItems[1].textContent = '';
             } else {
-                statusItems[1].textContent = '等待风格分析...';
+                statusItems[0].textContent = '等待风格分析...';
+                statusItems[1].textContent = '';
             }
         }
     }
