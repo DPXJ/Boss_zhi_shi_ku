@@ -193,6 +193,78 @@
         </footer>
     </div>
 
+    <!-- 设置按钮 -->
+    <div class="settings-btn" onclick="showConfigModal()">
+        <i class="fas fa-cog"></i>
+    </div>
+
+    <!-- 配置模态框 -->
+    <div class="modal-overlay" id="config-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>API配置</h3>
+                <button class="close-btn" onclick="closeConfigModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <h4>FastGPT配置</h4>
+                    <div class="form-group">
+                        <label for="fastgpt-apikey">API密钥</label>
+                        <input type="password" id="fastgpt-apikey" class="form-input" placeholder="请输入FastGPT API密钥">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="style-workflow-id">风格分析工作流ID</label>
+                            <input type="text" id="style-workflow-id" class="form-input" placeholder="风格分析工作流ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="content-workflow-id">内容生成工作流ID</label>
+                            <input type="text" id="content-workflow-id" class="form-input" placeholder="内容生成工作流ID">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="api-mode">接口模式</label>
+                        <select id="api-mode" class="form-select">
+                            <option value="chat">对话接口（推荐）</option>
+                            <option value="workflow">工作流接口</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h4>阿里云OSS配置</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="oss-access-key-id">Access Key ID</label>
+                            <input type="text" id="oss-access-key-id" class="form-input" placeholder="阿里云OSS Access Key ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="oss-access-key-secret">Access Key Secret</label>
+                            <input type="password" id="oss-access-key-secret" class="form-input" placeholder="阿里云OSS Access Key Secret">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="oss-bucket">Bucket名称</label>
+                            <input type="text" id="oss-bucket" class="form-input" placeholder="OSS Bucket名称">
+                        </div>
+                        <div class="form-group">
+                            <label for="oss-region">地域</label>
+                            <input type="text" id="oss-region" class="form-input" placeholder="如：oss-cn-beijing">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="clearAllConfig()">清除所有配置</button>
+                <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+                <button class="btn btn-success" onclick="testApiConnection()">测试连接</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html> 

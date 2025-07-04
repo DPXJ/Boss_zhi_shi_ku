@@ -12,16 +12,16 @@ let API_CONFIG = {
     FASTGPT_STYLE: {
         baseUrl: 'https://api.fastgpt.in/api', // FastGPT官方API地址
         apiKey: 'fastgpt-oCBXIfsNzyuNuzlq3LDXoe8v73SFg4g2MbVKV8GXMMxMpYBRlLyw6', // 风格分析专用密钥
-        workflowId: '685c9d7e6adb97a0858caaa6' // 风格分析工作流ID
+        workflowId: '685f87df49b71f158b57ae61' // 风格分析工作流ID（已修正）
     },
     // FastGPT配置 - 内容生成
     FASTGPT_CONTENT: {
         baseUrl: 'https://api.fastgpt.in/api', // FastGPT官方API地址
         apiKey: 'fastgpt-p2WSK5LRZZM3tVzk0XRT4vERkQ2PYLXi6rFAZdHzzuB7mSicDLRBXiymej', // 内容生成专用密钥
-        workflowId: '685f87df49b71f158b57ae61' // 内容创作工作流ID
+        workflowId: '685c9d7e6adb97a0858caaa6' // 内容创作工作流ID（已修正）
     },
     // 接口模式选择：'workflow' 或 'chat'
-    MODE: 'chat' // 默认使用对话接口模式
+    MODE: 'chat' // 固定使用对话接口模式
 };
 
 // 全局状态管理
@@ -160,15 +160,16 @@ async function uploadFilesToOSS(files) {
 }
 
 // 调用FastGPT工作流接口（风格分析）
-async function callStyleAnalysisWorkflow(articleUrls) {
+async function callStyleAnalysisWorkflow(fileUrls, userUrls) {
     console.log('🔄 调用FastGPT风格分析工作流...');
-    console.log('文件URLs:', articleUrls);
+    console.log('文件URLs:', fileUrls);
+    console.log('用户URLs:', userUrls);
     
     if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
         throw new Error('风格分析工作流ID未配置，请先配置workflowId');
     }
     
-    const response = await fetch(`${API_CONFIG.FASTGPT_STYLE.baseUrl}/workflow/run`, {
+    const response = await fetch(`/api/fastgpt/workflow/run`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -177,7 +178,8 @@ async function callStyleAnalysisWorkflow(articleUrls) {
         body: JSON.stringify({
             workflowId: API_CONFIG.FASTGPT_STYLE.workflowId,
             variables: {
-                article_input: articleUrls
+                article_input: fileUrls,  // 文件URL数组
+                url_input: userUrls       // 用户输入URL数组
             }
         })
     });
@@ -191,19 +193,44 @@ async function callStyleAnalysisWorkflow(articleUrls) {
     const result = await response.json();
     console.log('✅ FastGPT风格分析工作流响应:', result);
     
-    // 从工作流输出中获取style_output
+    // 详细调试响应结构
+    console.log('🔍 调试 - 响应结构分析:');
+    console.log('- result类型:', typeof result);
+    console.log('- result键名:', Object.keys(result || {}));
+    
+    if (result && result.data) {
+        console.log('- result.data类型:', typeof result.data);
+        console.log('- result.data键名:', Object.keys(result.data || {}));
+    }
+    
+    // 尝试多种可能的路径提取style_output
+    let styleOutput = null;
+    
     if (result && result.style_output) {
-        return result.style_output;
+        console.log('✓ 在 result.style_output 找到内容');
+        styleOutput = result.style_output;
+    } else if (result && result.data && result.data.style_output) {
+        console.log('✓ 在 result.data.style_output 找到内容');
+        styleOutput = result.data.style_output;
+    } else if (result && result.outputs && result.outputs.style_output) {
+        console.log('✓ 在 result.outputs.style_output 找到内容');
+        styleOutput = result.outputs.style_output;
+    } else if (result && result.variables && result.variables.style_output) {
+        console.log('✓ 在 result.variables.style_output 找到内容');
+        styleOutput = result.variables.style_output;
+    } else {
+        console.warn('❌ 在所有预期路径都未找到style_output变量');
+        console.log('🔍 完整响应内容:', JSON.stringify(result, null, 2));
+        
+        // 尝试返回整个结果让用户看到实际结构
+        throw new Error('无法找到style_output变量，请检查工作流输出配置');
     }
     
-    // 如果没有style_output，尝试从其他可能的字段获取
-    if (result && result.data && result.data.style_output) {
-        return result.data.style_output;
-    }
-    
-    console.warn('工作流响应格式异常:', result);
-    throw new Error('无法从工作流获取风格分析结果');
+    console.log('✅ 提取到的style_output内容:', styleOutput);
+    return styleOutput;
 }
+
+
 
 // 调用FastGPT工作流接口（内容生成）
 async function callContentGenerationWorkflow(styleOutput, contentLength, topic, styleType, remark) {
@@ -214,7 +241,7 @@ async function callContentGenerationWorkflow(styleOutput, contentLength, topic, 
         throw new Error('内容生成工作流ID未配置，请先配置workflowId');
     }
     
-    const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/workflow/run`, {
+    const response = await fetch(`/api/fastgpt/workflow/run`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -256,9 +283,10 @@ async function callContentGenerationWorkflow(styleOutput, contentLength, topic, 
 }
 
 // 新增：FastGPT 对话接口调用
-async function callChatCompletions(messages, customUid = null) {
+async function callChatCompletions(messages, customUid = null, variables = null) {
     console.log('🔄 调用FastGPT对话接口...');
     console.log('消息:', messages);
+    console.log('变量:', variables);
     
     // 生成或使用已存在的chatId
     if (!appState.chatId) {
@@ -277,7 +305,12 @@ async function callChatCompletions(messages, customUid = null) {
         requestBody.customUid = customUid;
     }
     
-    const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`, {
+    // 如果提供了variables，添加到请求中
+    if (variables) {
+        requestBody.variables = variables;
+    }
+    
+    const response = await fetch(`/api/fastgpt/v1/chat/completions`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -312,12 +345,12 @@ async function callChatCompletions(messages, customUid = null) {
 
 // 新增：使用对话接口进行风格分析
 async function analyzeStyleWithChat(articleUrls) {
+    console.log('🔄 使用对话接口进行风格分析，传递文件URL...');
+    
     const messages = [
         {
             role: "user",
-            content: `请分析以下文档链接中的写作风格特点：
-
-${articleUrls.map((url, index) => `${index + 1}. ${url}`).join('\n')}
+            content: `请分析提供的文档中的写作风格特点。
 
 请从以下几个方面分析写作风格：
 1. 语言特点（正式/非正式、简洁/详细）
@@ -330,7 +363,13 @@ ${articleUrls.map((url, index) => `${index + 1}. ${url}`).join('\n')}
         }
     ];
     
-    return await callChatCompletions(messages);
+    // 通过variables参数传递文件URL，就像工作流接口一样
+    const variables = {
+        article_input: appState.fileUrls,  // 文件URL数组
+        url_input: appState.urls           // 用户输入URL数组
+    };
+    
+    return await callChatCompletions(messages, null, variables);
 }
 
 // 新增：使用对话接口进行内容生成
@@ -668,19 +707,31 @@ async function performStyleAnalysis() {
         
         console.log('开始风格分析，文件URL:', allUrls);
         
+        let rawStyleOutput; // 保存原始结果
         let styleOutput;
         
         // 根据配置的模式选择接口
-        if (API_CONFIG.MODE === 'chat' && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+        if (API_CONFIG.MODE === 'chat') {
             // 使用对话接口
+            if (!API_CONFIG.FASTGPT_CONTENT.apiKey) {
+                throw new Error('对话模式需要配置API密钥');
+            }
             console.log('🔄 使用对话接口进行风格分析');
+            
+            // 提示用户对话模式的工作原理
+            updateAnalysisStatus('对话模式：正在分析文件内容...');
+            showToast('对话模式：通过variables传递文件URL', 'info');
+            
             styleOutput = await analyzeStyleWithChat(allUrls);
-        } else if (API_CONFIG.FASTGPT_STYLE.workflowId && API_CONFIG.FASTGPT_STYLE.apiKey) {
+        } else if (API_CONFIG.MODE === 'workflow') {
             // 使用工作流接口
+            if (!API_CONFIG.FASTGPT_STYLE.workflowId || !API_CONFIG.FASTGPT_STYLE.apiKey) {
+                throw new Error('工作流模式需要配置API密钥和工作流ID');
+            }
             console.log('🔄 使用工作流接口进行风格分析');
-            styleOutput = await callStyleAnalysisWorkflow(allUrls);
+            styleOutput = await callStyleAnalysisWorkflow(appState.fileUrls, appState.urls);
         } else {
-            throw new Error('请配置FastGPT API密钥和工作流ID，或切换到对话模式');
+            throw new Error('请设置正确的接口模式（chat 或 workflow）');
         }
         
         appState.styleOutput = styleOutput;
@@ -790,8 +841,11 @@ async function generateContent() {
         let generatedContent;
         
         // 根据配置的模式选择接口
-        if (API_CONFIG.MODE === 'chat' && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+        if (API_CONFIG.MODE === 'chat') {
             // 使用对话接口
+            if (!API_CONFIG.FASTGPT_CONTENT.apiKey) {
+                throw new Error('对话模式需要配置API密钥');
+            }
             console.log('🔄 使用对话接口进行内容生成');
             generatedContent = await generateContentWithChat(
                 appState.styleOutput,
@@ -800,8 +854,11 @@ async function generateContent() {
                 contentType,
                 notes
             );
-        } else if (API_CONFIG.FASTGPT_CONTENT.workflowId && API_CONFIG.FASTGPT_CONTENT.apiKey) {
+        } else if (API_CONFIG.MODE === 'workflow') {
             // 使用工作流接口
+            if (!API_CONFIG.FASTGPT_CONTENT.workflowId || !API_CONFIG.FASTGPT_CONTENT.apiKey) {
+                throw new Error('工作流模式需要配置API密钥和工作流ID');
+            }
             console.log('🔄 使用工作流接口进行内容生成');
             generatedContent = await callContentGenerationWorkflow(
                 appState.styleOutput,
@@ -811,7 +868,7 @@ async function generateContent() {
                 notes
             );
         } else {
-            throw new Error('请配置FastGPT API密钥和工作流ID，或切换到对话模式');
+            throw new Error('请设置正确的接口模式（chat 或 workflow）');
         }
         
         // 显示结果
@@ -1066,7 +1123,7 @@ function checkAPIConfig() {
 }
 
 // 显示配置模态框
-function showConfigModal() {
+window.showConfigModal = function() {
     const modal = document.createElement('div');
     modal.className = 'config-modal';
     modal.innerHTML = `
@@ -1087,8 +1144,8 @@ function showConfigModal() {
             </div>
             
             <div class="config-buttons">
-                <button onclick="saveAPIConfig()">保存配置</button>
-                <button onclick="skipConfig()">跳过（使用模板模式）</button>
+                <button onclick="window.saveAPIConfig()">保存配置</button>
+                <button onclick="window.skipConfig()">跳过（使用模板模式）</button>
             </div>
             
             <div class="config-help">
@@ -1101,7 +1158,7 @@ function showConfigModal() {
 }
 
 // 保存API配置
-function saveAPIConfig() {
+window.saveAPIConfig = function() {
     const ossKeyId = document.getElementById('oss-key-id').value.trim();
     const ossKeySecret = document.getElementById('oss-key-secret').value.trim();
     const fastgptStyleKey = document.getElementById('fastgpt-style-key').value.trim();
@@ -1129,21 +1186,40 @@ function saveAPIConfig() {
 }
 
 // 跳过配置
-function skipConfig() {
+window.skipConfig = function() {
     document.querySelector('.config-modal').remove();
     showToast('使用模板模式，部分功能受限', 'info');
 }
 
 // 从本地存储加载配置
 function loadConfigFromStorage() {
+    // 保存代码中的关键配置
+    const codeDefaults = {
+        MODE: API_CONFIG.MODE,
+        FASTGPT_STYLE: { ...API_CONFIG.FASTGPT_STYLE },
+        FASTGPT_CONTENT: { ...API_CONFIG.FASTGPT_CONTENT }
+    };
+    
     const saved = localStorage.getItem('boss_kb_config');
     if (saved) {
         try {
             const config = JSON.parse(saved);
             API_CONFIG = { ...API_CONFIG, ...config };
+            
+            // 强制保持代码中的关键配置
+            API_CONFIG.MODE = codeDefaults.MODE;
+            API_CONFIG.FASTGPT_STYLE.workflowId = codeDefaults.FASTGPT_STYLE.workflowId;
+            API_CONFIG.FASTGPT_CONTENT.workflowId = codeDefaults.FASTGPT_CONTENT.workflowId;
+            
+            console.log('✅ 配置已加载，但关键配置保持代码中的设置');
+            console.log(`🔧 接口模式: ${API_CONFIG.MODE} (代码锁定)`);
+            console.log(`🔧 风格分析工作流: ${API_CONFIG.FASTGPT_STYLE.workflowId} (代码锁定)`);
+            console.log(`🔧 内容生成工作流: ${API_CONFIG.FASTGPT_CONTENT.workflowId} (代码锁定)`);
         } catch (e) {
             console.error('配置加载失败:', e);
         }
+    } else {
+        console.log('✅ 使用代码中的默认配置');
     }
 }
 
@@ -1251,6 +1327,50 @@ document.addEventListener('DOMContentLoaded', async function() {
 // 导出配置函数供外部调用
 window.setAPIConfig = setAPIConfig;
 
+// 新增：显示配置锁定说明
+window.showLocks = function() {
+    console.log('🔒 ======== 配置锁定说明 ========');
+    console.log('');
+    console.log('✅ 以下配置已在代码中锁定，重启项目后自动生效：');
+    console.log(`🔧 接口模式: ${API_CONFIG.MODE}`);
+    console.log(`🔧 风格分析工作流ID: ${API_CONFIG.FASTGPT_STYLE.workflowId}`);
+    console.log(`🔧 内容生成工作流ID: ${API_CONFIG.FASTGPT_CONTENT.workflowId}`);
+    console.log('');
+    console.log('📝 可通过localStorage保存的配置：');
+    console.log('- API密钥（需要您自己配置）');
+    console.log('- OSS配置（需要您自己配置）');
+    console.log('');
+    console.log('💡 优势：');
+    console.log('✅ 重启项目后无需重新配置');
+    console.log('✅ 换浏览器后无需重新配置');
+    console.log('✅ 团队使用统一配置');
+    console.log('==========================');
+};
+
+// 新增：显示模式对比帮助
+window.showModes = function() {
+    console.log('🔧 ======== 接口模式说明 ========');
+    console.log('');
+    console.log('💬 对话模式 (chat) - 推荐');
+    console.log('  ✅ 优势：配置简单，只需API密钥');
+    console.log('  ✅ 适用：内容生成、对话互动');
+    console.log('  ❌ 限制：无法直接分析文件内容');
+    console.log('  🔧 配置：setMode("chat") + setApiKey("你的密钥")');
+    console.log('');
+    console.log('⚙️  工作流模式 (workflow)');
+    console.log('  ✅ 优势：可处理复杂任务，分析文件内容');
+    console.log('  ✅ 适用：文档分析、复杂处理流程');
+    console.log('  ❌ 限制：需要配置工作流ID，设置复杂');
+    console.log('  🔧 配置：setMode("workflow") + 工作流ID');
+    console.log('');
+    console.log('💡 当前模式：' + (API_CONFIG.MODE === 'chat' ? '对话模式' : '工作流模式'));
+    console.log('');
+    console.log('🎯 快速切换：');
+    console.log('  setMode("chat")     // 切换到对话模式');
+    console.log('  setMode("workflow") // 切换到工作流模式');
+    console.log('==========================');
+};
+
 // 快速配置FastGPT API密钥
 window.setStyleKey = function(apiKey) {
     API_CONFIG.FASTGPT_STYLE.apiKey = apiKey;
@@ -1285,32 +1405,7 @@ window.setContentWorkflowId = function(workflowId) {
     showToast('内容生成工作流配置成功', 'success');
 };
 
-// 显示当前配置
-window.showConfig = function() {
-    console.log('=== 当前FastGPT配置 ===');
-    console.log('🔧 接口模式:', API_CONFIG.MODE === 'chat' ? '对话接口模式' : '工作流接口模式');
-    console.log('🎨 风格分析配置:');
-    console.log('  API Key:', API_CONFIG.FASTGPT_STYLE.apiKey ? API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '...' : '❌ 未配置');
-    console.log('  Workflow ID:', API_CONFIG.FASTGPT_STYLE.workflowId || '❌ 未配置');
-    console.log('📝 内容生成配置:');
-    console.log('  API Key:', API_CONFIG.FASTGPT_CONTENT.apiKey ? API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...' : '❌ 未配置');
-    console.log('  Workflow ID:', API_CONFIG.FASTGPT_CONTENT.workflowId || '❌ 未配置');
-    console.log('🌐 API地址:', API_CONFIG.FASTGPT_CONTENT.baseUrl);
-    console.log('========================');
-    
-    // 配置提示
-    console.log('💡 快速配置命令:');
-    console.log('  设置API密钥: setApiKey("fastgpt-你的密钥")');
-    console.log('  切换到对话模式: setMode("chat")');
-    console.log('  切换到工作流模式: setMode("workflow")');
-    if (!API_CONFIG.FASTGPT_STYLE.workflowId) {
-        console.log('  配置风格分析工作流: setStyleWorkflowId("您的工作流ID")');
-    }
-    if (!API_CONFIG.FASTGPT_CONTENT.workflowId) {
-        console.log('  配置内容生成工作流: setContentWorkflowId("您的工作流ID")');
-    }
-    console.log('  测试API连接: testApi()');
-};
+
 
 // 新增：设置接口模式
 window.setMode = function(mode) {
@@ -1392,7 +1487,7 @@ window.testApi = async function() {
         
         console.log('📤 请求数据:', requestBody);
         
-        const response = await fetch(`${API_CONFIG.FASTGPT_CONTENT.baseUrl}/v1/chat/completions`, {
+        const response = await fetch(`/api/fastgpt/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${API_CONFIG.FASTGPT_CONTENT.apiKey}`,
@@ -1437,6 +1532,100 @@ window.testApi = async function() {
     }
 };
 
+// 新增：清除所有配置
+window.clearConfig = function() {
+    if (confirm('确定要清除所有API配置吗？此操作将清除所有密钥和配置信息。')) {
+        // 清除localStorage中的配置
+        localStorage.removeItem('boss_kb_config');
+        
+        // 重置API_CONFIG为默认值
+        API_CONFIG.FASTGPT_STYLE.apiKey = '';
+        API_CONFIG.FASTGPT_CONTENT.apiKey = '';
+        API_CONFIG.FASTGPT_STYLE.workflowId = '';
+        API_CONFIG.FASTGPT_CONTENT.workflowId = '';
+        API_CONFIG.OSS.accessKeyId = '';
+        API_CONFIG.OSS.accessKeySecret = '';
+        
+        console.log('✅ 所有API配置已清除');
+        showToast('API配置已清除，请重新配置', 'info');
+        
+        // 显示配置指南
+        setTimeout(() => {
+            console.log('💡 重新配置提示:');
+            console.log('  设置API密钥: setApiKey("fastgpt-你的新密钥")');
+            console.log('  查看配置指南: quickSetup()');
+        }, 1000);
+    }
+};
+
+// 新增：清除指定密钥
+window.clearApiKey = function() {
+    API_CONFIG.FASTGPT_STYLE.apiKey = '';
+    API_CONFIG.FASTGPT_CONTENT.apiKey = '';
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    
+    console.log('✅ API密钥已清除');
+    showToast('API密钥已清除', 'info');
+    
+    console.log('💡 重新设置密钥: setApiKey("fastgpt-你的新密钥")');
+};
+
+
+
+// 新增：配置OSS
+window.setOSSConfig = function(accessKeyId, accessKeySecret) {
+    if (!accessKeyId || !accessKeySecret) {
+        console.error('❌ 请提供完整的OSS配置信息');
+        console.log('💡 使用方法: setOSSConfig("您的AccessKeyId", "您的AccessKeySecret")');
+        return;
+    }
+    
+    API_CONFIG.OSS.accessKeyId = accessKeyId;
+    API_CONFIG.OSS.accessKeySecret = accessKeySecret;
+    localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+    
+    console.log('✅ OSS配置已更新');
+    console.log('AccessKey ID:', accessKeyId.substring(0, 10) + '...');
+    showToast('OSS配置成功', 'success');
+    
+    // 立即初始化OSS
+    initializeOSS().then(() => {
+        console.log('✅ OSS已初始化，可以上传文件了');
+    }).catch(error => {
+        console.error('❌ OSS初始化失败:', error);
+    });
+};
+
+// 新增：显示配置窗口
+window.showConfig = function() {
+    console.log('=== 当前配置状态 ===');
+    console.log('🔧 接口模式:', API_CONFIG.MODE === 'chat' ? '对话接口模式' : '工作流接口模式');
+    
+    console.log('📁 OSS配置:');
+    console.log('  AccessKey ID:', API_CONFIG.OSS.accessKeyId ? API_CONFIG.OSS.accessKeyId.substring(0, 10) + '...' : '❌ 未配置');
+    console.log('  AccessKey Secret:', API_CONFIG.OSS.accessKeySecret ? '已配置' : '❌ 未配置');
+    console.log('  Bucket:', API_CONFIG.OSS.bucket);
+    
+    console.log('🎨 风格分析配置:');
+    console.log('  API Key:', API_CONFIG.FASTGPT_STYLE.apiKey ? API_CONFIG.FASTGPT_STYLE.apiKey.substring(0, 20) + '...' : '❌ 未配置');
+    console.log('  Workflow ID:', API_CONFIG.FASTGPT_STYLE.workflowId || '❌ 未配置');
+    
+    console.log('📝 内容生成配置:');
+    console.log('  API Key:', API_CONFIG.FASTGPT_CONTENT.apiKey ? API_CONFIG.FASTGPT_CONTENT.apiKey.substring(0, 20) + '...' : '❌ 未配置');
+    console.log('  Workflow ID:', API_CONFIG.FASTGPT_CONTENT.workflowId || '❌ 未配置');
+    
+    console.log('🌐 API地址:', API_CONFIG.FASTGPT_CONTENT.baseUrl);
+    console.log('========================');
+    
+    // 配置提示
+    console.log('💡 快速配置命令:');
+    console.log('  配置OSS: setOSSConfig("AccessKeyId", "AccessKeySecret")');
+    console.log('  配置API密钥: setApiKey("fastgpt-你的密钥")');
+    console.log('  显示配置窗口: showConfigModal()');
+    console.log('  切换模式: setMode("chat") 或 setMode("workflow")');
+    console.log('  测试API: testApi()');
+};
+
 // 新增：快速配置指南
 window.quickSetup = function() {
     console.log('=== FastGPT 快速配置指南 ===');
@@ -1454,6 +1643,10 @@ window.quickSetup = function() {
     console.log('');
     console.log('🔧 常用命令:');
     console.log('- showConfig() // 查看当前配置');
+    console.log('- showModes() // 查看模式说明');
+    console.log('- showLocks() // 查看配置锁定说明');
+    console.log('- clearConfig() // 清除所有配置');
+    console.log('- clearApiKey() // 仅清除API密钥');
     console.log('- testApi() // 测试API连接');
     console.log('');
     console.log('📋 API密钥获取位置:');
@@ -1461,5 +1654,183 @@ window.quickSetup = function() {
     console.log('⚠️ 注意：使用应用专用密钥，不是账户密钥');
     console.log('===========================');
 };
+
+// 配置模态框相关函数
+function showConfigModal() {
+    console.log('📋 显示配置界面');
+    
+    // 加载当前配置到表单
+    loadConfigToForm();
+    
+    // 显示模态框
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden'; // 防止背景滚动
+    }
+}
+
+function closeConfigModal() {
+    console.log('📋 关闭配置界面');
+    
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto'; // 恢复背景滚动
+    }
+}
+
+function loadConfigToForm() {
+    // FastGPT配置
+    const apikeyInput = document.getElementById('fastgpt-apikey');
+    const styleWorkflowInput = document.getElementById('style-workflow-id');
+    const contentWorkflowInput = document.getElementById('content-workflow-id');
+    const apiModeSelect = document.getElementById('api-mode');
+    
+    // OSS配置
+    const ossAccessKeyIdInput = document.getElementById('oss-access-key-id');
+    const ossAccessKeySecretInput = document.getElementById('oss-access-key-secret');
+    const ossBucketInput = document.getElementById('oss-bucket');
+    const ossRegionInput = document.getElementById('oss-region');
+    
+    if (apikeyInput) apikeyInput.value = API_CONFIG.FASTGPT_CONTENT.apiKey || '';
+    if (styleWorkflowInput) styleWorkflowInput.value = API_CONFIG.FASTGPT_STYLE.workflowId || '';
+    if (contentWorkflowInput) contentWorkflowInput.value = API_CONFIG.FASTGPT_CONTENT.workflowId || '';
+    if (apiModeSelect) apiModeSelect.value = API_CONFIG.MODE || 'chat';
+    
+    if (ossAccessKeyIdInput) ossAccessKeyIdInput.value = API_CONFIG.OSS.accessKeyId || '';
+    if (ossAccessKeySecretInput) ossAccessKeySecretInput.value = API_CONFIG.OSS.accessKeySecret || '';
+    if (ossBucketInput) ossBucketInput.value = API_CONFIG.OSS.bucket || '';
+    if (ossRegionInput) ossRegionInput.value = API_CONFIG.OSS.region || '';
+}
+
+function saveConfig() {
+    console.log('💾 保存配置');
+    
+    try {
+        // 获取表单值
+        const apikey = document.getElementById('fastgpt-apikey')?.value || '';
+        const styleWorkflowId = document.getElementById('style-workflow-id')?.value || '';
+        const contentWorkflowId = document.getElementById('content-workflow-id')?.value || '';
+        const apiMode = document.getElementById('api-mode')?.value || 'chat';
+        
+        const ossAccessKeyId = document.getElementById('oss-access-key-id')?.value || '';
+        const ossAccessKeySecret = document.getElementById('oss-access-key-secret')?.value || '';
+        const ossBucket = document.getElementById('oss-bucket')?.value || '';
+        const ossRegion = document.getElementById('oss-region')?.value || '';
+        
+        // 更新配置
+        if (apikey) {
+            API_CONFIG.FASTGPT_STYLE.apiKey = apikey;
+            API_CONFIG.FASTGPT_CONTENT.apiKey = apikey;
+        }
+        
+        if (styleWorkflowId) {
+            API_CONFIG.FASTGPT_STYLE.workflowId = styleWorkflowId;
+        }
+        
+        if (contentWorkflowId) {
+            API_CONFIG.FASTGPT_CONTENT.workflowId = contentWorkflowId;
+        }
+        
+        API_CONFIG.MODE = apiMode;
+        
+        if (ossAccessKeyId) {
+            API_CONFIG.OSS.accessKeyId = ossAccessKeyId;
+        }
+        
+        if (ossAccessKeySecret) {
+            API_CONFIG.OSS.accessKeySecret = ossAccessKeySecret;
+        }
+        
+        if (ossBucket) {
+            API_CONFIG.OSS.bucket = ossBucket;
+        }
+        
+        if (ossRegion) {
+            API_CONFIG.OSS.region = ossRegion;
+        }
+        
+        // 保存到localStorage
+        localStorage.setItem('boss_kb_config', JSON.stringify(API_CONFIG));
+        
+        console.log('✅ 配置保存成功');
+        showToast('配置保存成功', 'success');
+        
+        // 如果配置了OSS，重新初始化
+        if (API_CONFIG.OSS.accessKeyId && API_CONFIG.OSS.accessKeySecret) {
+            initializeOSS().then(() => {
+                console.log('✅ OSS重新初始化成功');
+            }).catch(error => {
+                console.error('❌ OSS重新初始化失败:', error);
+            });
+        }
+        
+        // 关闭模态框
+        closeConfigModal();
+        
+    } catch (error) {
+        console.error('❌ 配置保存失败:', error);
+        showToast('配置保存失败: ' + error.message, 'error');
+    }
+}
+
+function clearAllConfig() {
+    if (confirm('确定要清除所有配置吗？此操作将清除所有API密钥和配置信息。')) {
+        // 清除localStorage
+        localStorage.removeItem('boss_kb_config');
+        
+        // 重置配置
+        API_CONFIG.FASTGPT_STYLE.apiKey = '';
+        API_CONFIG.FASTGPT_CONTENT.apiKey = '';
+        API_CONFIG.FASTGPT_STYLE.workflowId = '';
+        API_CONFIG.FASTGPT_CONTENT.workflowId = '';
+        API_CONFIG.OSS.accessKeyId = '';
+        API_CONFIG.OSS.accessKeySecret = '';
+        API_CONFIG.MODE = 'chat';
+        
+        // 清空表单
+        loadConfigToForm();
+        
+        console.log('✅ 所有配置已清除');
+        showToast('所有配置已清除', 'info');
+    }
+}
+
+function testApiConnection() {
+    console.log('🔄 测试API连接');
+    
+    // 先保存当前配置
+    saveConfig();
+    
+    // 延迟一下再测试，确保配置已保存
+    setTimeout(() => {
+        if (window.testApi) {
+            window.testApi();
+        } else {
+            console.error('❌ testApi函数不存在');
+            showToast('测试函数不存在', 'error');
+        }
+    }, 500);
+}
+
+// 点击模态框背景关闭
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                closeConfigModal();
+            }
+        });
+    }
+    
+    // ESC键关闭模态框
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeConfigModal();
+        }
+    });
+});
 
  
