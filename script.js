@@ -737,9 +737,7 @@ function collectAllUrls() {
 
 // 执行风格分析（只在按钮点击时触发，变量名严格一致，始终传递数组）
 async function performStyleAnalysis() {
-    // 自动收集所有输入框内容，防止遗漏
     collectAllUrls();
-    // 保证全局状态为数组
     if (!Array.isArray(appState.fileUrls)) appState.fileUrls = [];
     if (!Array.isArray(appState.urls)) appState.urls = [];
     const article_input = Array.isArray(appState.fileUrls) ? [...appState.fileUrls] : [];
@@ -753,31 +751,75 @@ async function performStyleAnalysis() {
     checkLearningButtonStatus();
     try {
         let styleOutput;
+        let debugRaw = {};
         if (API_CONFIG.MODE === 'chat') {
             if (!API_CONFIG.FASTGPT_STYLE.apiKey) {
                 throw new Error('对话模式需要配置风格分析API密钥');
             }
+            // chat模式返回的就是style_output
             styleOutput = await analyzeStyleWithChat(article_input, url_input);
+            debugRaw = { style_output: styleOutput };
         } else if (API_CONFIG.MODE === 'workflow') {
             if (!API_CONFIG.FASTGPT_STYLE.workflowId || !API_CONFIG.FASTGPT_STYLE.apiKey) {
                 throw new Error('工作流模式需要配置API密钥和工作流ID');
             }
-            styleOutput = await callStyleAnalysisWorkflow(article_input, url_input);
+            // workflow模式返回完整响应
+            const result = await callStyleAnalysisWorkflowRaw(article_input, url_input);
+            styleOutput = result.style_output;
+            debugRaw = result;
         } else {
             throw new Error('请设置正确的接口模式（chat 或 workflow）');
         }
         appState.styleOutput = styleOutput;
-        updateAnalysisStatus(); // 只展示风格分析结果
+        updateAnalysisStatus();
         showToast('风格分析完成', 'success');
+        // 展示调试区内容
+        showFastGPTDebug(debugRaw);
     } catch (error) {
         console.error('风格分析失败:', error);
         appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
         updateAnalysisStatus();
         showToast('风格分析失败，已使用默认风格', 'warning');
+        showFastGPTDebug({});
     } finally {
         appState.isAnalyzing = false;
         checkLearningButtonStatus();
     }
+}
+
+// 新增：获取完整workflow响应
+async function callStyleAnalysisWorkflowRaw(fileUrls, userUrls) {
+    const safeFileUrls = Array.isArray(fileUrls) ? fileUrls : [];
+    const safeUserUrls = Array.isArray(userUrls) ? userUrls : [];
+    const response = await fetch(`/api/fastgpt/workflow/run`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_CONFIG.FASTGPT_STYLE.apiKey}`
+        },
+        body: JSON.stringify({
+            workflowId: API_CONFIG.FASTGPT_STYLE.workflowId,
+            variables: {
+                article_input: safeFileUrls,
+                url_input: safeUserUrls
+            }
+        })
+    });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`风格分析工作流调用失败: ${response.status} - ${errorText}`);
+    }
+    const result = await response.json();
+    // 直接返回完整对象
+    return result;
+}
+
+// 新增：展示调试区内容
+function showFastGPTDebug(raw) {
+    const urlOutput = raw['url_pi-liang_output'] || raw.data?.['url_pi-liang_output'] || '';
+    const styleOutput = raw.style_output || raw.data?.style_output || '';
+    document.getElementById('url-pi-liang-output').textContent = typeof urlOutput === 'string' ? urlOutput : JSON.stringify(urlOutput, null, 2);
+    document.getElementById('style-output-debug').textContent = typeof styleOutput === 'string' ? styleOutput : JSON.stringify(styleOutput, null, 2);
 }
 
 // 只展示风格分析结果
