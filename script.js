@@ -43,7 +43,9 @@ let actualBucket = null; // 实际可用的bucket名称
 
 async function initializeOSS() {
     if (!API_CONFIG.OSS.accessKeyId || !API_CONFIG.OSS.accessKeySecret) {
-        console.warn('OSS配置不完整，无法初始化OSS客户端');
+        console.warn('⚠️ OSS配置不完整，文件上传功能将不可用');
+        console.warn('💡 提示：如需使用文件上传功能，请在配置中填写OSS AccessKey信息');
+        showToast('OSS配置不完整，文件上传功能暂时不可用', 'warning');
         return;
     }
     
@@ -64,7 +66,8 @@ async function initializeOSS() {
         
     } catch (error) {
         console.error('OSS初始化失败:', error);
-        showToast('OSS初始化失败: ' + error.message, 'error');
+        showToast('OSS初始化失败，文件上传功能暂时不可用', 'warning');
+        // 不要抛出错误，让应用继续运行
     }
 }
 
@@ -129,7 +132,7 @@ async function testOSSUpload() {
 // 简化的文件上传到OSS
 async function uploadFilesToOSS(files) {
     if (!ossClient || !actualBucket) {
-        throw new Error('OSS未正确初始化或bucket不可用');
+        throw new Error('OSS未正确配置。请在配置中填写正确的OSS AccessKey信息后重试。');
     }
     
     const uploadResults = [];
@@ -152,7 +155,17 @@ async function uploadFilesToOSS(files) {
             
         } catch (error) {
             console.error(`❌ 文件上传失败: ${file.name}`, error);
-            throw new Error(`文件 ${file.name} 上传失败: ${error.message}`);
+            
+            // 提供更详细的错误信息
+            if (error.name === 'SignatureDoesNotMatchError') {
+                throw new Error(`文件 ${file.name} 上传失败：OSS签名验证失败，请检查AccessKey配置是否正确`);
+            } else if (error.status === 403) {
+                throw new Error(`文件 ${file.name} 上传失败：OSS权限不足，请检查AccessKey权限设置`);
+            } else if (error.status === 404) {
+                throw new Error(`文件 ${file.name} 上传失败：OSS Bucket不存在，请检查Bucket名称`);
+            } else {
+                throw new Error(`文件 ${file.name} 上传失败: ${error.message}`);
+            }
         }
     }
     
@@ -490,65 +503,109 @@ ${notes ? `\n备注：\n${notes}` : ''}
 
 // 文件上传功能
 function selectFiles() {
-    document.getElementById('file-input').click();
-}
-
-document.getElementById('file-input').addEventListener('change', async function(e) {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-    if (!API_CONFIG.OSS.accessKeyId) {
-        showToast('请先配置OSS API信息', 'error');
+    // 检查OSS是否已配置
+    if (!API_CONFIG.OSS.accessKeyId || !API_CONFIG.OSS.accessKeySecret) {
+        showToast('请先配置OSS访问凭证才能使用文件上传功能', 'warning');
         return;
     }
-    appState.isUploading = true;
-    updateUploadStatus('正在上传文件...');
-    try {
-        const fileUrls = await uploadFilesToOSS(files);
-        files.forEach((file, index) => {
-            addFileToList(file.name, getFileType(file.name), formatFileSize(file.size));
-            appState.uploadedFiles.push({
-                name: file.name,
-                type: getFileType(file.name),
-                size: formatFileSize(file.size),
-                url: fileUrls[index]
-            });
-        });
-        appState.fileUrls.push(...fileUrls);
-        showToast(`成功上传 ${files.length} 个文件`, 'success');
-        checkLearningButtonStatus();
-        updateAnalysisStatus(`已上传 ${appState.uploadedFiles.length} 个文件，${appState.urls.length} 个链接。可继续添加或点击\"开始AI学习\"`);
-    } catch (error) {
-        console.error('文件上传失败:', error);
-        let errorMsg = '文件上传失败: ';
-        if (error.message && error.message.includes('XMLHttpRequest')) {
-            errorMsg += 'CORS跨域问题，请检查OSS跨域设置';
-        } else if (error.status === 403) {
-            errorMsg += '权限不足，请检查AccessKey权限';
-        } else if (error.status === 404) {
-            errorMsg += 'Bucket不存在，请检查配置';
-        } else {
-            errorMsg += error.message || '未知错误';
+    
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = '.txt,.md,.doc,.docx,.pdf,.json,.csv,.xml,.html,.htm,.js,.css,.py,.java,.cpp,.c,.php,.rb,.go,.rs,.swift,.kt,.tsx,.ts,.jsx,.vue,.scss,.sass,.less,.styl,.yml,.yaml,.toml,.ini,.conf,.log,.sql,.sh,.bat,.ps1,.tex,.rtf,.odt,.ods,.odp,.epub,.mobi,.azw3';
+    
+    input.onchange = async function(event) {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+        
+        // 检查文件大小
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        const oversizedFiles = files.filter(file => file.size > maxSize);
+        if (oversizedFiles.length > 0) {
+            showToast(`文件过大：${oversizedFiles.map(f => f.name).join(', ')}（限制10MB）`, 'error');
+            return;
         }
-        showToast(errorMsg, 'error');
-        console.log('🔧 文件上传失败解决建议:');
-        console.log('1. 确认CORS设置正确');
-        console.log('2. 运行 diagnoseOSSIssues() 进行全面诊断');
-        console.log('3. 检查文件大小是否超限');
-        console.log('4. 检查网络连接');
-    } finally {
-        appState.isUploading = false;
-        updateUploadStatus('');
-    }
-    e.target.value = '';
-});
+        
+        // 显示上传状态
+        appState.isUploading = true;
+        updateUploadStatus('正在上传文件...');
+        
+        try {
+            // 上传文件到OSS
+            const fileUrls = await uploadFilesToOSS(files);
+            
+            // 上传成功后处理
+            files.forEach((file, index) => {
+                // 添加到页面显示
+                addFileToList(file.name, getFileType(file.name), file.size);
+                
+                // 添加到全局状态
+                appState.uploadedFiles.push({
+                    name: file.name,
+                    type: getFileType(file.name),
+                    size: file.size,
+                    url: fileUrls[index]
+                });
+            });
+            
+            // 更新文件URL数组
+            appState.fileUrls.push(...fileUrls);
+            
+            // 显示成功提示
+            showToast(`✅ 成功上传 ${files.length} 个文件`, 'success');
+            
+            // 更新按钮状态
+            checkLearningButtonStatus();
+            
+            // 更新分析状态
+            updateAnalysisStatus(`已上传 ${appState.uploadedFiles.length} 个文件，${appState.urls.length} 个链接。可继续添加或点击"开始AI学习"`);
+            
+            console.log('✅ 文件上传完成');
+            console.log('- 上传文件数:', files.length);
+            console.log('- 文件URL数组:', appState.fileUrls);
+            console.log('- 总文件数:', appState.uploadedFiles.length);
+            
+        } catch (error) {
+            console.error('文件上传失败:', error);
+            
+            // 显示详细错误信息
+            let errorMsg = '文件上传失败: ';
+            if (error.message.includes('OSS签名验证失败')) {
+                errorMsg += 'OSS签名验证失败，请检查AccessKey配置';
+            } else if (error.message.includes('OSS权限不足')) {
+                errorMsg += 'OSS权限不足，请检查AccessKey权限设置';
+            } else if (error.message.includes('Bucket不存在')) {
+                errorMsg += 'OSS Bucket不存在，请检查Bucket名称';
+            } else if (error.message.includes('XMLHttpRequest')) {
+                errorMsg += 'CORS跨域问题，请检查OSS跨域设置';
+            } else {
+                errorMsg += error.message || '未知错误';
+            }
+            
+            showToast(errorMsg, 'error');
+        } finally {
+            appState.isUploading = false;
+            updateUploadStatus('');
+        }
+    };
+    
+    input.click();
+}
+
+// 文件上传处理已移至selectFiles()函数，避免重复处理
 
 function addFileToList(filename, type, size) {
     const uploadedFiles = document.getElementById('uploaded-files');
     const fileItem = document.createElement('div');
     fileItem.className = 'file-item';
+    
+    // 如果size是数字，需要格式化
+    const formattedSize = typeof size === 'number' ? formatFileSize(size) : size;
+    
     fileItem.innerHTML = `
         <i class="fas fa-file-${type}"></i>
         <span class="filename">${filename}</span>
+        <span class="filesize">${formattedSize}</span>
         <button class="remove-btn" onclick="removeFile(this)">
             <i class="fas fa-times"></i>
         </button>
@@ -743,8 +800,20 @@ function updateAnalysisStatus(message = '') {
 }
 
 function updateUploadStatus(message) {
-    // 可以在这里添加上传状态的显示逻辑
-    console.log('上传状态:', message);
+    // 在页面上显示上传状态
+    const statusItems = document.querySelectorAll('.status-item span');
+    if (statusItems.length >= 2) {
+        if (message) {
+            statusItems[1].textContent = message;
+        } else {
+            statusItems[1].textContent = '';
+        }
+    }
+    
+    // 同时在控制台输出状态
+    if (message) {
+        console.log('📤 上传状态:', message);
+    }
 }
 
 // 表单验证
