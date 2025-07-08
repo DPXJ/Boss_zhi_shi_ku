@@ -1169,10 +1169,20 @@ async function generateContent() {
         return;
     }
     
-    const topic = document.getElementById('topic').value.trim();
-    const contentLength = parseInt(document.getElementById('word-count').value) || 500;
-    const contentType = document.getElementById('content-type').value;
-    const notes = document.getElementById('notes').value.trim();
+    const topicInput = document.getElementById('topic');
+    const wordCountInput = document.getElementById('word-count');
+    const contentTypeInput = document.getElementById('content-type');
+    const notesInput = document.getElementById('notes');
+
+    if (!topicInput || !wordCountInput || !contentTypeInput || !notesInput) {
+        showToast('页面表单元素缺失，请检查页面结构！', 'error');
+        return;
+    }
+
+    const topic = topicInput.value.trim();
+    const contentLength = parseInt(wordCountInput.value) || 500;
+    const contentType = contentTypeInput.value;
+    const notes = notesInput.value.trim();
     
     // 显示加载状态
     const generateBtn = document.querySelector('.generate-btn');
