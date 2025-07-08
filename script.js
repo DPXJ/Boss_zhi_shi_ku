@@ -922,6 +922,8 @@ async function performStyleAnalysis() {
         showToast('风格分析完成', 'success');
         // 展示调试区内容
         showFastGPTDebug(debugRaw);
+        // 新增：展示风格分析结果
+        showStyleAnalysis(styleOutput);
     } catch (error) {
         console.error('风格分析失败:', error);
         appState.styleOutput = '正式严谨，条理清晰，用词准确，逻辑性强';
@@ -1117,7 +1119,7 @@ function updateAnalysisStatus(message = '') {
             statusItems[1].textContent = '';
         } else {
             if (appState.styleOutput) {
-                statusItems[0].textContent = `风格分析结果：${appState.styleOutput}`;
+                statusItems[0].textContent = `风格分析已完成`;
                 statusItems[1].textContent = '';
             } else {
                 statusItems[0].textContent = '等待风格分析...';
@@ -1171,17 +1173,18 @@ async function generateContent() {
     
     const topicInput = document.getElementById('topic');
     const wordCountInput = document.getElementById('word-count');
-    const contentTypeInput = document.getElementById('content-type');
+    // const contentTypeInput = document.getElementById('content-type'); // 已无此input
     const notesInput = document.getElementById('notes');
 
-    if (!topicInput || !wordCountInput || !contentTypeInput || !notesInput) {
+    if (!topicInput || !wordCountInput || !notesInput) {
         showToast('页面表单元素缺失，请检查页面结构！', 'error');
         return;
     }
 
     const topic = topicInput.value.trim();
     const contentLength = parseInt(wordCountInput.value) || 500;
-    const contentType = contentTypeInput.value;
+    // const contentType = contentTypeInput.value; // 已无此input
+    const contentType = appState.styleOutput || '';
     const notes = notesInput.value.trim();
     
     // 显示加载状态
@@ -2471,52 +2474,112 @@ async function handleStyleAnalysisResponse(response) {
 
 // 显示风格分析结果
 function showStyleAnalysis(content) {
-    const debugSection = document.getElementById('fastgpt-debug-section');
     const styleOutput = document.getElementById('style-output');
-    
-    // 创建风格分析容器
+    // 创建容器
     const container = document.createElement('div');
     container.className = 'style-analysis-container';
-    
-    // 添加标题栏
+    // 顶部标题和按钮组
     const header = document.createElement('div');
     header.className = 'style-analysis-header';
-    header.innerHTML = `
-        <h3>
-            <i class="fas fa-fingerprint"></i>
-            风格分析结果
-        </h3>
-    `;
-    
-    // 添加内容区域
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    // 标题
+    const title = document.createElement('div');
+    title.style.fontWeight = 'bold';
+    title.style.fontSize = '1.15rem';
+    title.textContent = '内容风格';
+    // 按钮组
+    const actionsDiv = document.createElement('div');
+    actionsDiv.style.display = 'flex';
+    actionsDiv.style.gap = '10px';
+    actionsDiv.style.alignItems = 'center';
+    // 编辑按钮
+    const editBtn = document.createElement('button');
+    editBtn.className = 'action-btn';
+    editBtn.innerHTML = '<i class="fas fa-edit"></i> 编辑';
+    actionsDiv.appendChild(editBtn);
+    // 保存按钮
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'action-btn';
+    saveBtn.innerHTML = '<i class="fas fa-save"></i> 保存';
+    saveBtn.style.display = 'none';
+    actionsDiv.appendChild(saveBtn);
+    // 复制按钮
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'action-btn';
+    copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制';
+    actionsDiv.appendChild(copyBtn);
+    // 下载按钮
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'action-btn';
+    downloadBtn.innerHTML = '<i class="fas fa-download"></i> 下载';
+    actionsDiv.appendChild(downloadBtn);
+    // 全屏按钮
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.className = 'fullscreen-btn';
+    fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> 全屏查看';
+    actionsDiv.appendChild(fullscreenBtn);
+    // 组装header
+    header.appendChild(title);
+    header.appendChild(actionsDiv);
+    // 内容区
     const contentDiv = document.createElement('div');
     contentDiv.className = 'style-analysis-content';
-    
-    // 将内容渲染为Markdown
-    const renderedContent = marked.parse(content);
-    contentDiv.innerHTML = `
-        <div class="markdown-content">${renderedContent}</div>
-        <button class="fullscreen-btn" onclick="showFullscreen(this)">
-            <i class="fas fa-expand"></i>
-            全屏查看
-        </button>
-    `;
-    
-    // 组装容器
+    contentDiv.style.position = 'relative';
+    let renderedContent = marked.parse(content);
+    contentDiv.innerHTML = `<div class="markdown-content" id="style-markdown-content">${renderedContent}</div>`;
+    // 编辑逻辑
+    let isEditing = false;
+    let originalMarkdown = content;
+    editBtn.onclick = function() {
+        if (isEditing) return;
+        isEditing = true;
+        const markdownDiv = contentDiv.querySelector('.markdown-content');
+        markdownDiv.innerHTML = `<textarea id='style-edit-textarea' style='width:100%;height:300px;font-size:1rem;border-radius:8px;border:1px solid #ccc;padding:10px;'>${originalMarkdown}</textarea>`;
+        editBtn.style.display = 'none';
+        saveBtn.style.display = 'inline-block';
+    };
+    saveBtn.onclick = function() {
+        const textarea = contentDiv.querySelector('#style-edit-textarea');
+        if (!textarea) return;
+        const newMarkdown = textarea.value;
+        originalMarkdown = newMarkdown;
+        contentDiv.querySelector('.markdown-content').innerHTML = marked.parse(newMarkdown);
+        isEditing = false;
+        editBtn.style.display = 'inline-block';
+        saveBtn.style.display = 'none';
+        appState.styleOutput = newMarkdown;
+        showToast('风格分析结果已保存', 'success');
+    };
+    copyBtn.onclick = function() {
+        const textToCopy = originalMarkdown;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            showToast('已复制到剪贴板', 'success');
+        });
+    };
+    downloadBtn.onclick = function() {
+        const blob = new Blob([originalMarkdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '内容风格.md';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+    fullscreenBtn.onclick = function() {
+        showFullscreen(fullscreenBtn);
+    };
+    // 组装
     container.appendChild(header);
     container.appendChild(contentDiv);
-    
-    // 清空并添加新内容
     styleOutput.innerHTML = '';
     styleOutput.appendChild(container);
-    
-    // 高亮代码块
     document.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightBlock(block);
     });
-    
-    // 显示调试区域
-    debugSection.style.display = 'block';
 }
 
 // 显示全屏模态框

@@ -327,16 +327,43 @@ body {
 }
 
 .form-group label {
-    font-weight: 600;
+    font-size: 1rem;
+    color: #222;
+    font-weight: 500;
     margin-bottom: 8px;
-    color: #333;
-    position: relative;
+    display: block;
 }
-
-.form-group label.required::after {
-    content: "*";
-    color: #dc3545;
-    margin-left: 4px;
+.required {
+    color: #e53935;
+    font-size: 1em;
+    margin-left: 2px;
+}
+/* 移除风格分析卡片样式，仅保留内容本身 */
+.style-analysis-container,
+.style-analysis-header,
+.style-analysis-content {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+#style-output {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 12px 16px;
+    box-sizing: border-box;
+    background: none;
+    margin: 0 0 16px 0;
+}
+#style-output .markdown-content {
+    padding: 0;
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #333;
 }
 
 .form-input, .form-select, .form-textarea {
@@ -415,10 +442,27 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #eaeaea;
-    background: #f8f9fa;
-    border-radius: 8px 8px 0 0;
+    padding: 0;
+    border: none;
+    background: none;
+    border-radius: 0;
+    margin-bottom: 8px;
+}
+.style-analysis-header .action-btn,
+.style-analysis-header .fullscreen-btn {
+    margin-left: 8px;
+    font-size: 0.95rem;
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid #d0d7de;
+    background: #fff;
+    color: #222;
+    transition: background 0.2s, color 0.2s;
+}
+.style-analysis-header .action-btn:hover,
+.style-analysis-header .fullscreen-btn:hover {
+    background: #f3f4f6;
+    color: #222;
 }
 
 .style-analysis-header h3 {

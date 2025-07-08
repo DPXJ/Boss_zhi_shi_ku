@@ -83,9 +83,10 @@
                             <i class="fas fa-brain"></i>
                             开始AI学习
                         </button>
+                        <!-- <div id="style-output"></div> -->
                     </div>
 
-                    <div class="analysis-status">
+                    <!-- <div class="analysis-status">
                         <div class="status-item">
                             <i class="fas fa-info-circle status-icon"></i>
                             <span>等待上传文件或添加链接</span>
@@ -94,7 +95,7 @@
                             <i class="fas fa-lightbulb status-icon"></i>
                             <span>等待风格分析...</span>
                         </div>
-                    </div>
+                    </div> -->
                 </div>
             </div>
 
@@ -108,25 +109,16 @@
 
                 <div class="requirements-form">
                     <div class="form-group">
-                        <label for="topic" class="required">主题</label>
+                        <label for="topic">主题 <span class="required">*</span></label>
                         <input type="text" id="topic" class="form-input" placeholder="请输入要生成内容的主题（必填）" required>
                     </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="word-count">字数要求</label>
-                            <input type="number" id="word-count" class="form-input" placeholder="请输入字数要求（如：500）" min="50" max="10000">
-                        </div>
-                    </div>
-
                     <div class="form-group">
-                        <label for="content-type">内容类型</label>
-                        <select id="content-type" class="form-input">
-                            <option value="general">通用</option>
-                            <option value="email">邮件</option>
-                            <option value="report">报告</option>
-                            <option value="summary">总结</option>
-                        </select>
+                        <label for="word-count">字数要求 <span class="required">*</span></label>
+                        <input type="number" id="word-count" class="form-input" placeholder="请输入字数要求（如：500）" min="50" max="10000" value="500">
+                    </div>
+                    <div class="form-group">
+                        <label for="style-output">内容风格 <span class="required">*</span></label>
+                        <div id="style-output"></div>
                     </div>
                     <div class="form-group">
                         <label for="notes">补充说明</label>
@@ -188,7 +180,7 @@
 
                     <!-- 新增：FastGPT原始输出调试区 -->
                     <div class="result-section" id="fastgpt-debug-section" style="display: none;">
-                        <div id="style-output"></div>
+                        <!-- <div id="style-output"></div> -->
                         <div style="margin-top: 20px;">
                             <strong>FastGPT原始输出：</strong>
                             <pre id="fastgpt-raw-output" style="background: #f8f9fa; border-radius: 6px; padding: 10px; border: 1px solid #eee; margin-top: 10px; max-height: 200px; overflow-y: auto;"></pre>
