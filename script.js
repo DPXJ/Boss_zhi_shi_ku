@@ -1274,83 +1274,18 @@ function displayResult(content) {
     const wordCountDisplay = document.getElementById('word-count-display');
     const generationTime = document.getElementById('generation-time');
 
-    // 构建卡片容器
-    resultContent.innerHTML = '';
-    const container = document.createElement('div');
-    container.className = 'style-analysis-container';
-    // 顶部标题和按钮组
-    const header = document.createElement('div');
-    header.className = 'style-analysis-header';
-    header.style.display = 'flex';
-    header.style.justifyContent = 'space-between';
-    header.style.alignItems = 'center';
-    // 标题
-    const title = document.createElement('div');
-    title.style.fontWeight = 'bold';
-    title.style.fontSize = '1.15rem';
-    title.textContent = '生成结果';
-    // 按钮组
-    const actionsDiv = document.createElement('div');
-    actionsDiv.style.display = 'flex';
-    actionsDiv.style.gap = '10px';
-    actionsDiv.style.alignItems = 'center';
-    // 编辑按钮
-    const editBtn = document.createElement('button');
-    editBtn.className = 'action-btn edit-btn';
-    editBtn.innerHTML = '<i class="fas fa-edit"></i> 编辑修改';
-    actionsDiv.appendChild(editBtn);
-    // 复制按钮
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'action-btn copy-btn';
-    copyBtn.innerHTML = '<i class="fas fa-copy"></i> 复制文本';
-    actionsDiv.appendChild(copyBtn);
-    // 重新生成按钮
-    const regenBtn = document.createElement('button');
-    regenBtn.className = 'action-btn regenerate-btn';
-    regenBtn.innerHTML = '<i class="fas fa-redo"></i> 重新生成';
-    actionsDiv.appendChild(regenBtn);
-    // 保存按钮
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'action-btn save-btn';
-    saveBtn.innerHTML = '<i class="fas fa-save"></i> 保存文档';
-    actionsDiv.appendChild(saveBtn);
-    // 全屏按钮
-    const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.className = 'fullscreen-btn';
-    fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> 全屏查看';
-    actionsDiv.appendChild(fullscreenBtn);
-    // 组装header
-    header.appendChild(title);
-    header.appendChild(actionsDiv);
-    // 内容区
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'style-analysis-content';
-    contentDiv.style.position = 'relative';
-    let renderedContent = marked.parse(content);
-    contentDiv.innerHTML = `<div class="markdown-content" id="result-markdown-content">${renderedContent}</div>`;
-    // 组装
-    container.appendChild(header);
-    container.appendChild(contentDiv);
-    resultContent.appendChild(container);
-    // 统计字数和时间
+    // 更新头部卡片的信息
     wordCountDisplay.textContent = `约 ${content.length} 字`;
     generationTime.textContent = new Date().toLocaleTimeString('zh-CN');
+
+    // 显示结果区域
     resultSection.style.display = 'block';
-    // 事件绑定
-    copyBtn.onclick = copyResult;
-    editBtn.onclick = editResult;
-    regenBtn.onclick = regenerateContent;
-    saveBtn.onclick = saveResult;
-    fullscreenBtn.onclick = function() {
-        // 全屏展示生成结果
-        const modal = document.getElementById('fullscreen-modal');
-        document.getElementById('fullscreen-content').innerHTML = contentDiv.innerHTML;
-        modal.style.display = 'block';
-        document.querySelectorAll('#fullscreen-content pre code').forEach((block) => {
-            hljs.highlightBlock(block);
-        });
-    };
-    // 高亮代码块
+
+    // 直接渲染Markdown内容
+    let renderedContent = marked.parse(content);
+    resultContent.innerHTML = renderedContent;
+
+    // 代码高亮
     document.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightBlock(block);
     });
@@ -2835,5 +2770,85 @@ document.addEventListener('DOMContentLoaded', function() {
 // 全局函数，供HTML onclick使用
 window.showPrivacyModal = showPrivacyModal;
 window.closePrivacyModal = closePrivacyModal;
+
+// 编辑功能
+let isEditing = false;
+const resultContent = document.getElementById('result-content');
+
+function toggleEdit() {
+    const editBtn = document.querySelector('.edit-btn');
+    isEditing = !isEditing;
+    
+    if (isEditing) {
+        // 进入编辑模式
+        resultContent.contentEditable = true;
+        resultContent.classList.add('editable');
+        editBtn.innerHTML = '<i class="fas fa-save"></i>';
+        editBtn.title = '保存修改';
+    } else {
+        // 退出编辑模式
+        resultContent.contentEditable = false;
+        resultContent.classList.remove('editable');
+        editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+        editBtn.title = '编辑修改';
+        // 这里可以添加保存到后端的逻辑
+    }
+}
+
+// 保存到本地
+function saveToLocal() {
+    const content = resultContent.innerHTML;
+    const blob = new Blob([content], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `生成内容_${timestamp}.html`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
+
+// 全屏查看
+function showFullscreenModal() {
+    const modal = document.getElementById('fullscreen-modal');
+    const modalContent = document.getElementById('fullscreen-content');
+    modalContent.innerHTML = resultContent.innerHTML;
+    modal.style.display = 'flex';
+}
+
+// 关闭全屏
+function closeFullscreenModal() {
+    const modal = document.getElementById('fullscreen-modal');
+    modal.style.display = 'none';
+}
+
+// 同步到飞书文档
+function syncToFeishu() {
+    // TODO: 实现飞书文档同步逻辑
+    alert('飞书文档同步功能即将上线');
+}
+
+// 为按钮添加事件监听
+document.addEventListener('DOMContentLoaded', function() {
+    // 编辑按钮
+    const editBtn = document.querySelector('.edit-btn');
+    if (editBtn) {
+        editBtn.addEventListener('click', toggleEdit);
+    }
+
+    // 保存按钮
+    const saveBtn = document.querySelector('.save-btn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveToLocal);
+    }
+
+    // 同步按钮
+    const syncBtn = document.querySelector('.sync-btn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', syncToFeishu);
+    }
+});
 
  
