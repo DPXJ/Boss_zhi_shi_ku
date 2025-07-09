@@ -32,7 +32,6 @@
                     <div class="step-number">1</div>
                     <i class="fas fa-brain"></i>
                     风格输入学习
-                    <div class="copy-test-url-btn">复制测试地址</div>
                 </div>
                 
                 <div class="learning-section">
@@ -63,11 +62,12 @@
                     </div>
 
                     <!-- 右侧：URL输入区域 -->
-                    <div class="url-area">
+                    <div class="url-area" style="position:relative;">
                         <h3 class="upload-title">
                             <i class="fas fa-link"></i>
                             添加参考链接
                         </h3>
+                        <button class="copy-test-url-btn" title="复制测试地址" style="position:absolute;top:10px;right:10px;"><i class="fas fa-link"></i></button>
                         <div class="url-inputs" id="url-inputs">
                             <!-- 添加的URL将在这里显示 -->
                         </div>
@@ -175,15 +175,6 @@
                                 <i class="fas fa-save"></i>
                                 保存文档
                             </button>
-                        </div>
-                    </div>
-
-                    <!-- 新增：FastGPT原始输出调试区 -->
-                    <div class="result-section" id="fastgpt-debug-section" style="display: none;">
-                        <!-- <div id="style-output"></div> -->
-                        <div style="margin-top: 20px;">
-                            <strong>FastGPT原始输出：</strong>
-                            <pre id="fastgpt-raw-output" style="background: #f8f9fa; border-radius: 6px; padding: 10px; border: 1px solid #eee; margin-top: 10px; max-height: 200px; overflow-y: auto;"></pre>
                         </div>
                     </div>
 
